@@ -3,7 +3,8 @@
 最終更新: 2026-06-22 / 担当: Claude(Opus 4.8) 設計・指揮 ＋ codex CLI 実装
 
 ## 現在地
-**M0 環境セットアップほぼ完了。** Node v24.17.0 / npm 11.13.0 / codex-cli 0.141.0 導入済。git init・初回コミット・GitHub への push 完了。**残るは codex のログイン（ユーザー認証）のみ。**
+**WSL へ移行（理由：Windows ネイティブでは codex がサンドボックス制約で書込不可）。** 詳細は `HANDOVER_WSL.md`。
+Windows 側で環境構築・git init・GitHub push 済。WSL(Ubuntu-22.04) は git/python3/node v20/codex 導入済・**ChatGPT ログイン済**で実装準備完了。次は WSL に clone して M0b scaffold を codex 実行。
 
 ## マイルストーン状況
 | ID | マイルストーン | 状態 |
@@ -21,12 +22,17 @@
 - データ＝OSM実地区（osmnx）。対象地区名は未確定（既定：小さめの東京の地区）。
 - `reference/`（モレノ著書全文）は著作権配慮で `.gitignore` 除外（公開repoに含めない）。
 
-## 次アクション
-1. ✅ Node/codex 導入、git init、初回 push 完了
-2. **ユーザー**：`codex login`（認証）← 次はここ
-3. ログイン後、M0b scaffold を codex exec で生成させる
+## 次アクション（WSL 側）
+1. `cd ~ && git clone https://github.com/shintaro-tanimoto/tosi-design.git`
+2. push 用 credential.helper 設定（Windows GCM 流用 or PAT）— `HANDOVER_WSL.md` 参照
+3. `codex exec -C ~/tosi-design -s workspace-write - < /tmp/m0b_prompt.md` で scaffold 生成
+4. diff レビュー → `pytest` → commit/push → M1 へ
+
+## 学び / 決定
+- Windows ネイティブ codex は書込にサンドボックス全無効フラグが必須 → 不採用。**WSL で `-s workspace-write`（安全）を使う**。
+- WSL 環境は構築済（HANDOVER_WSL.md にステータス表）。
 
 ## ブロッカー / 要ユーザー対応
-- 🔴 **`codex login`（OpenAI/ChatGPT 認証）待ち** — これが済むと codex 実装を開始できる
-- ✅ 初回 push の Git Credential Manager 認証は完了（キャッシュ済）
+- ✅ codex 認証（Windows・WSL とも ChatGPT ログイン済）
+- ✅ GitHub push 認証（Windows GCM 済。WSL は GCM 流用 or PAT を設定予定）
 - ❓ 対象OSM地区名（後で `--place` 指定可）

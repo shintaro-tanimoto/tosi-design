@@ -23,6 +23,14 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--quality", action="store_true", help="歩行環境の質レイヤも計算する")
     run_parser.set_defaults(func=run)
 
+    propose_parser = subparsers.add_parser("propose", help="不足エリアへの改善提案を生成する")
+    propose_parser.add_argument("--place", default=DEFAULT_PLACE, help="対象地区名")
+    propose_parser.add_argument("--minutes", type=float, default=15, help="到達圏の分数")
+    propose_parser.add_argument("--mode", choices=MODES, default="walk", help="移動手段")
+    propose_parser.add_argument("--sample", type=int, default=None, help="評価起点のサンプル数")
+    propose_parser.add_argument("--top", type=int, default=10, help="表示する上位提案件数")
+    propose_parser.set_defaults(func=propose)
+
     return parser
 
 
@@ -138,6 +146,98 @@ def run(args: argparse.Namespace) -> int:
         print(f"SxQ_scatter: {scatter_path}")
         print(f"time_of_day_map: {time_path}")
     return 0
+
+
+def propose(args: argparse.Namespace) -> int:
+    """機能B: ルールベースの改善提案を生成する."""
+
+    from nmincity.backend.osmnx_backend import OsmnxBackend
+    from nmincity.core import proposals
+    from nmincity.core.score import proximity_score
+    from nmincity.data import loader
+    from nmincity.viz.maps import proposal_map, save_map
+
+    graph = loader.load_graph(args.place, args.mode)
+    category_nodes = loader.load_category_nodes(graph, args.place)
+    backend = OsmnxBackend(graph, category_nodes, args.mode)
+    origins = loader.make_origins(graph, args.sample)
+
+    reach_by_origin: dict[object, dict[str, bool]] = {}
+    service_areas: dict[object, set] = {}
+    scores: dict[object, float] = {}
+    deficient_points: list[tuple[float, float, float]] = []
+
+    for origin in origins:
+        reach = backend.reachable_categories(origin, args.minutes, args.mode)
+        score = proximity_score(reach)
+        reachable = backend.service_area(origin, args.minutes, args.mode)
+        reach_by_origin[origin] = reach
+        service_areas[origin] = reachable
+        scores[origin] = score
+        if score < 0.5:
+            lon, lat = loader.node_lonlat(graph, origin)
+            deficient_points.append((lat, lon, score))
+
+    deficiencies = proposals.find_deficiencies(reach_by_origin)
+    time_based = proposals.time_conversion_proposals(deficiencies, reach_by_origin)
+    nearby_convertible = _nearby_convertible(deficiencies, service_areas, category_nodes)
+    multifunction = proposals.multifunction_proposals(deficiencies, nearby_convertible)
+    ranked = proposals.rank_proposals(time_based + multifunction, top_n=args.top)
+
+    proposal_points: list[tuple[float, float, str, float]] = []
+    for proposal in ranked:
+        if proposal.facility is None or proposal.facility not in graph.nodes:
+            continue
+        lon, lat = loader.node_lonlat(graph, proposal.facility)
+        proposal_points.append((lat, lon, proposal.rationale, proposal.priority))
+
+    output_path = f"outputs/{_safe_filename(args.place)}_proposals_{args.minutes:g}min_{args.mode}.html"
+    save_map(
+        proposal_map(
+            deficient_points,
+            proposal_points,
+            f"{args.place} ({args.minutes:g}min, {args.mode})",
+        ),
+        output_path,
+    )
+
+    deficient_count = sum(1 for score in scores.values() if score < 0.5)
+    print(f"place: {args.place}")
+    print(f"origins: {len(origins)}")
+    print(f"deficient_origins(S<0.5): {deficient_count}")
+    print("影響人口は人口メッシュ未接続のため、起点数ベースの近似です。")
+    print(proposals.summarize(ranked))
+    print(f"proposal_map: {output_path}")
+    return 0
+
+
+def _nearby_convertible(
+    deficiencies: dict[object, list[str]],
+    service_areas: dict[object, set],
+    category_nodes: dict[str, set],
+) -> dict[object, dict[str, set[tuple[object, str]]]]:
+    """到達圏内の既存施設を多機能転換候補として簡易抽出する."""
+
+    convertible_sources = ("education", "leisure", "work")
+    result: dict[object, dict[str, set[tuple[object, str]]]] = {}
+    for origin, missing_categories in deficiencies.items():
+        reachable = service_areas.get(origin, set())
+        by_target: dict[str, set[tuple[object, str]]] = {}
+        for target in missing_categories:
+            candidates: set[tuple[object, str]] = set()
+            for source in convertible_sources:
+                if source == target:
+                    continue
+                source_nodes = set(category_nodes.get(source, set()))
+                # TODO: 本格版では 2x 到達圏や直線距離バッファで、到達圏外だが
+                # 近傍にある学校・公共施設も候補化する。
+                for facility in sorted(reachable & source_nodes, key=str)[:3]:
+                    candidates.add((facility, source))
+            if candidates:
+                by_target[target] = candidates
+        if by_target:
+            result[origin] = by_target
+    return result
 
 
 def _summary(values: list[float]) -> tuple[float, float, float]:

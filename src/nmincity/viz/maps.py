@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import html
 import struct
 import zlib
 
@@ -113,6 +114,53 @@ def time_of_day_map(points_by_bucket: dict[str, list[tuple[float, float, float]]
     return m
 
 
+def proposal_map(
+    deficient_points: list[tuple[float, float, float]],
+    proposal_points: list[tuple[float, float, str, float]],
+    place: str,
+) -> folium.Map:
+    """不足起点と改善提案の代表位置を描画した地図を返す."""
+
+    all_points = [(lat, lon) for lat, lon, _score in deficient_points]
+    all_points.extend((lat, lon) for lat, lon, _label, _priority in proposal_points)
+    if all_points:
+        center_lat = sum(lat for lat, _lon in all_points) / len(all_points)
+        center_lon = sum(lon for _lat, lon in all_points) / len(all_points)
+    else:
+        center_lat, center_lon = 35.0, 139.0
+
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=15, tiles="cartodbpositron")
+
+    deficient_group = folium.FeatureGroup(name="不足起点", show=True)
+    for lat, lon, score in deficient_points:
+        folium.CircleMarker(
+            location=[lat, lon],
+            radius=5,
+            color="#dc2626",
+            fill=True,
+            fill_color="#fecaca",
+            fill_opacity=0.70,
+            weight=1,
+            popup=f"不足起点 S={score:.3f}",
+        ).add_to(deficient_group)
+    deficient_group.add_to(m)
+
+    proposal_group = folium.FeatureGroup(name="改善提案", show=True)
+    for lat, lon, label, priority in proposal_points:
+        popup = html.escape(f"{label}\n優先度={priority:.3f}").replace("\n", "<br>")
+        folium.Marker(
+            location=[lat, lon],
+            popup=popup,
+            tooltip=f"提案 優先度={priority:.3f}",
+            icon=folium.Icon(color="blue", icon="info-sign"),
+        ).add_to(proposal_group)
+    proposal_group.add_to(m)
+
+    folium.LayerControl(collapsed=False).add_to(m)
+    m.get_root().html.add_child(folium.Element(_proposal_legend_html(place)))
+    return m
+
+
 def sq_scatter(points: list[tuple[float, float, str]], place: str, path: str) -> None:
     """起点別の ``S`` と ``Q`` を並置する散布図 PNG を保存する."""
 
@@ -191,6 +239,22 @@ def _walk_legend_html(place: str) -> str:
           background: linear-gradient(90deg, #dc2626, #15803d);"></span>
         <span>高</span>
       </div>
+    </div>
+    """
+
+
+def _proposal_legend_html(place: str) -> str:
+    return f"""
+    <div style="
+      position: fixed; bottom: 24px; left: 24px; z-index: 9999;
+      background: white; padding: 10px 12px; border: 1px solid #d1d5db;
+      border-radius: 6px; font-size: 13px; box-shadow: 0 1px 4px #0002;">
+      <div style="font-weight: 700; margin-bottom: 6px;">改善提案: {place}</div>
+      <div><span style="display:inline-block; width:10px; height:10px;
+        background:#fecaca; border:1px solid #dc2626; border-radius:999px;
+        margin-right:6px;"></span>S&lt;0.5 の不足起点</div>
+      <div><span style="display:inline-block; width:10px; height:10px;
+        background:#2563eb; border-radius:2px; margin-right:6px;"></span>提案代表位置</div>
     </div>
     """
 

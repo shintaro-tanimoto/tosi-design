@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>要件定義書 ── 既存都市の「n分都市」化支援ツール（ArcGIS Pro）</title>
+<style>
+  :root{
+    --fg:#1f2328; --muted:#57606a; --line:#d8dee4; --bg:#ffffff;
+    --accent:#2563eb; --accent-bg:#eef4ff; --green:#15803d; --green-bg:#eafaf0;
+    --warn-bg:#fff7ed; --warn-line:#fdba74; --code-bg:#f6f8fa;
+  }
+  *{box-sizing:border-box;}
+  html{-webkit-print-color-adjust:exact; print-color-adjust:exact; scroll-behavior:smooth;}
+  body{
+    margin:0; color:var(--fg); background:#f3f4f6;
+    font-family:-apple-system,"Segoe UI","Hiragino Kaku Gothic ProN","Noto Sans JP",Meiryo,sans-serif;
+    line-height:1.75; font-size:16px;
+  }
+  .page{max-width:980px; margin:32px auto; background:var(--bg); padding:56px 64px;
+    box-shadow:0 1px 4px rgba(0,0,0,.08); border-radius:8px;}
+  header.doc{border-bottom:3px solid var(--accent); padding-bottom:20px; margin-bottom:8px;}
+  header.doc .eyebrow{color:var(--accent); font-weight:700; letter-spacing:.08em; font-size:13px;}
+  h1{font-size:30px; line-height:1.3; margin:6px 0 10px;}
+  .meta{color:var(--muted); font-size:14px;}
+  h2{font-size:22px; margin:48px 0 12px; padding-bottom:8px; border-bottom:2px solid var(--line);}
+  h2 .num{color:var(--accent); margin-right:.5em;}
+  h3{font-size:17px; margin:26px 0 8px; color:#0f172a;}
+  h4{font-size:15px; margin:18px 0 6px;}
+  p{margin:.5em 0;}
+  ul,ol{margin:.4em 0 .8em; padding-left:1.4em;}
+  li{margin:.25em 0;}
+  table{border-collapse:collapse; width:100%; margin:14px 0; font-size:14.5px;}
+  th,td{border:1px solid var(--line); padding:8px 11px; text-align:left; vertical-align:top;}
+  th{background:#f1f5f9; font-weight:700;}
+  tbody tr:nth-child(even){background:#fafbfc;}
+  .lead{font-size:16.5px; color:#374151; background:var(--accent-bg);
+    border-left:4px solid var(--accent); padding:14px 18px; border-radius:0 6px 6px 0; margin:16px 0;}
+  .callout{background:var(--green-bg); border-left:4px solid var(--green);
+    padding:12px 16px; border-radius:0 6px 6px 0; margin:14px 0;}
+  .warn{background:var(--warn-bg); border-left:4px solid var(--warn-line);
+    padding:12px 16px; border-radius:0 6px 6px 0; margin:14px 0;}
+  blockquote{margin:12px 0; padding:10px 18px; border-left:4px solid #cbd5e1; background:#f8fafc;
+    color:#334155; font-size:15px; border-radius:0 6px 6px 0;}
+  code{background:var(--code-bg); padding:2px 6px; border-radius:4px; font-size:90%;
+    font-family:"SFMono-Regular",Consolas,Menlo,monospace;}
+  .formula{background:var(--code-bg); border:1px solid var(--line); border-radius:6px;
+    padding:14px 18px; margin:14px 0; font-size:16px; text-align:center;}
+  .toc{background:#fafbfc; border:1px solid var(--line); border-radius:8px; padding:18px 24px; margin:24px 0;}
+  .toc ol{counter-reset:item; list-style:none; padding-left:0; columns:2; column-gap:40px;}
+  .toc li{margin:.3em 0;} .toc a{color:var(--fg); text-decoration:none;}
+  .toc a:hover{color:var(--accent); text-decoration:underline;}
+  .tag{display:inline-block; font-size:11px; font-weight:700; padding:2px 8px; border-radius:20px;
+    background:var(--accent-bg); color:var(--accent); margin-right:6px;}
+  .tag.A{background:#eef4ff;color:#2563eb;} .tag.B{background:#eafaf0;color:#15803d;}
+  .tag.C{background:#fdf2f8;color:#be185d;}
+  .flow{display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:14px 0; font-size:14px;}
+  .flow .step{background:var(--accent-bg); border:1px solid #c7d9fb; border-radius:6px; padding:8px 12px; font-weight:600;}
+  .flow .arrow{color:var(--accent); font-weight:700;}
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:18px; margin:14px 0;}
+  .card{border:1px solid var(--line); border-radius:8px; padding:16px 18px;}
+  .card h4{margin:0 0 8px; font-size:15px;}
+  .w-bar{display:inline-block; height:10px; background:var(--accent); border-radius:5px; vertical-align:middle; margin-right:6px;}
+  .small{font-size:13px; color:var(--muted);}
+  sup.ref{font-size:11px; line-height:0; vertical-align:super;}
+  sup.ref a{color:var(--accent); text-decoration:none; font-weight:700; padding:0 1px;}
+  .reflist{font-size:13.5px;} .reflist li{margin:.5em 0;} .reflist a{color:var(--accent); word-break:break-all;}
+  .reflist code{font-size:85%;}
+  footer{margin-top:48px; padding-top:18px; border-top:1px solid var(--line); color:var(--muted); font-size:13px;}
+  @media print{body{background:#fff;} .page{box-shadow:none; margin:0; max-width:100%;}}
+  @media (max-width:640px){.page{padding:28px 20px;} .toc ol{columns:1;} .grid2{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="doc">
+  <div class="eyebrow">都市デザイン特別演習 ／ REQUIREMENTS DEFINITION</div>
+  <h1>既存都市の「n分都市」化支援ツール<br>要件定義書（ArcGIS Pro）</h1>
+  <div class="meta">version 1.1 ／ 2026-06-22 ／ 近接性都市（Proximity City）を題材としたGIS分析ツールの要件定義</div>
+</header>
+
+<div class="lead">
+本書は、ArcGIS Pro 上で <strong>「既存都市を n 分都市にするには何を変えればよいか」</strong> を分析・提示する
+ソフトウェアの<strong>要件を定義</strong>するものである。主眼は最適化エンジンの構築ではなく、
+<strong>用途別の重みづけ（特に自然・教育施設の扱い）を中核</strong>に据え、その重みに基づいて
+都市の「現状の不足」と「変えるべき場所・用途」を<strong>透明に・出典に基づいて</strong>示すことにある。
+</div>
+
+<nav class="toc">
+  <strong>目次</strong>
+  <ol>
+    <li><a href="#s1">1. 背景と目的</a></li>
+    <li><a href="#s2">2. 理論的根拠：モレノ「15分都市」</a></li>
+    <li><a href="#s3">3. 事例の根拠（出典付き）</a></li>
+    <li><a href="#s4">4. システム概要</a></li>
+    <li><a href="#s5">5. 機能要件</a></li>
+    <li><a href="#s6">6. 重みづけ設計（中核）</a></li>
+    <li><a href="#s6q">6.7 都市デザインの質レイヤ（軸2）</a></li>
+    <li><a href="#s7">7. データ要件</a></li>
+    <li><a href="#s8">8. 非機能要件</a></li>
+    <li><a href="#s9">9. 出力・可視化</a></li>
+    <li><a href="#s10">10. 開発フェーズ</a></li>
+    <li><a href="#s11">11. 留意点・論点</a></li>
+    <li><a href="#s12">12. 参考文献・出典</a></li>
+  </ol>
+</nav>
+
+<!-- 1 -->
+<h2 id="s1"><span class="num">1.</span>背景と目的</h2>
+<p>「近接性都市（Proximity City / Ville des Proximités）」は、<strong>移動距離ではなく移動時間と近接性</strong>を
+都市計画の基本軸に据える考え方である<sup class="ref"><a href="#r1">[1]</a></sup>。その代表的実装が、パリの「15分都市」と
+コペンハーゲン北港 Nordhavn の「5分都市」である。本演習ではこの2事例を参考に、既存都市を近接性都市へ
+近づけるための分析ツールを構想する。</p>
+
+<h3>中間発表で受けた指摘と本書での対応</h3>
+<table>
+  <thead><tr><th style="width:42%">指摘</th><th>本要件定義書での対応</th></tr></thead>
+  <tbody>
+    <tr><td>① 既往事例の前提をもっと調べる</td><td>§2・§3 で理論（モレノ）と2事例の制度・施策・指標・批判を<strong>出典付き</strong>で整理し、重みづけの根拠とする</td></tr>
+    <tr><td>② シミュレーションに寄りすぎない</td><td>提案機能をルールベース（機能B）中心とし、最適化（機能C）も重み・パラメータが透明に効く設計に限定（§5・§6）。§6.7 で追加する都市デザインの<strong>質レイヤ</strong>も、調整可能な重みと出典で透明に効く指標に限定する</td></tr>
+    <tr><td>③ 事例を参考に「どのような重みづけで評価・改善するか」を考える（公共施設・自然の扱い）</td><td>§6 を本書の中核章とし、モレノの6機能を基礎に自然・教育を高めに置く根拠を出典から導出、調整可・感度分析を要件化</td></tr>
+    <tr><td>④ 可視化は良い</td><td>§9 で診断ヒートマップ・不足エリア・シナリオ比較を出力要件化</td></tr>
+  </tbody>
+</table>
+
+<h3>目的</h3>
+<ul>
+  <li>任意の既存都市について、用途別の<strong>n分到達圏</strong>と<strong>重みづけ合成スコア（n分都市度）</strong>を算出し、現状を<strong>診断</strong>する。</li>
+  <li>不足エリアに対し「<strong>何を・どこに</strong>足す／転換すべきか」を提示する。</li>
+  <li>重みづけを変えたときに評価・提案がどう変わるかを比較し、<strong>近接性都市の設計判断を支援</strong>する。</li>
+</ul>
+
+<!-- 2 -->
+<h2 id="s2"><span class="num">2.</span>理論的根拠：モレノ「15分都市」</h2>
+<p>重みづけのカテゴリ設定は、概念の提唱者カルロス・モレノの著作<sup class="ref"><a href="#r1">[1]</a></sup>に依拠する。</p>
+
+<h3>2.1 15分都市の定義と「6つの社会的機能」</h3>
+<p>モレノは、15分都市を「中心が一か所に固まらず多数の中心を持ち、一つの施設が多数の機能を果たし、
+基本的なサービスを提供する施設が住民の移動15分の圏内にある街」と定義する<sup class="ref"><a href="#r1">[1]</a></sup>（第1章・第6章）。
+そして都市に重要な社会的機能を明示的に<strong>6つ</strong>挙げている。</p>
+<blockquote>
+「都市にとって重要な社会的機能は大きく六つある。<strong>住居、仕事、必要なものの入手、教育、健康、娯楽</strong>である。
+それらへのアクセスまでの距離を縮めることが『15分都市』というコンセプトの目的である。」
+<span class="small">── モレノ『15分都市』第6章<sup class="ref"><a href="#r1">[1]</a></sup></span>
+</blockquote>
+<p>この<strong>6機能が、本ツールの用途カテゴリの基礎</strong>となる（住居は起点＝人口メッシュに内包。詳細は§6）。</p>
+
+<h3>2.2 都市を導く「4つの要素」</h3>
+<p>モレノは新しい都市を支える4要素を挙げる<sup class="ref"><a href="#r1">[1]</a></sup>（第6章）。
+これは UCCRN などが整理する4原則とも対応する<sup class="ref"><a href="#r7">[7]</a></sup>。</p>
+<ul>
+  <li><strong>近接性</strong>（必要な機能が近くにあること）</li>
+  <li><strong>混在性／多様性</strong>（多様な人々がともに暮らすこと）</li>
+  <li><strong>密度</strong>（施設・人・<strong>植物</strong>などの密度を適切に保つこと）</li>
+  <li><strong>遍在性（ユビキタス）</strong></li>
+</ul>
+<div class="callout">
+<strong>自然・緑の位置づけ（重要）：</strong>「自然・緑」はモレノの<em>6つの社会的機能には含まれない</em>。
+しかしモレノは緑（有機物の密度）を<strong>都市を構成する4要素の一つ</strong>に挙げ<sup class="ref"><a href="#r1">[1]</a></sup>、
+場所への愛着（トポフィリー）を育てる条件として「近くに気軽に自然と触れ合える場所を作ること」を挙げる<sup class="ref"><a href="#r1">[1]</a></sup>。
+本ツールでは、この理論的位置づけと2事例での重視（§3）を根拠に、<strong>自然を独立カテゴリとして追加</strong>する。
+</div>
+
+<h3>2.3 既存施設の「多機能転換」＝クロノトピー（機能Bの理論的根拠）</h3>
+<blockquote>
+「住民の身近な場所に都市機能を配置するためには、すでにあるインフラや施設を最大限に利用しなければならない。
+通常であれば一つの機能しか割り当てられていない建物を見直し、多くの機能を持たせることを検討すべきなのだ。
+例えば、<strong>授業が行われていない時間帯に学校を社会活動や文化活動の場にする</strong>こともできるだろう。」
+<span class="small">── モレノ『15分都市』第6章（クロノトピー）<sup class="ref"><a href="#r1">[1]</a></sup></span>
+</blockquote>
+<p>新設ではなく<strong>既存ストックの多機能転換（都市の新陳代謝）</strong>を重視するこの思想が、本ツールの
+<strong>機能B（転換提案）</strong>の直接の根拠である。モレノは具体的優先として「学校を皆の集まる場に」「医療の中心地を住民の近くに」
+「市民のための文化施設を増やす」「緑のあふれる道路」を挙げている<sup class="ref"><a href="#r1">[1]</a></sup>。</p>
+
+<!-- 3 -->
+<h2 id="s3"><span class="num">3.</span>事例の根拠（出典付き）</h2>
+
+<div class="grid2">
+  <div class="card">
+    <h4>事例A：パリ 15分都市（La ville du quart d'heure）</h4>
+    <ul class="small">
+      <li><strong>性格</strong>：既成高密度市街地の<strong>再配分・レトロフィット</strong><sup class="ref"><a href="#r6">[6]</a></sup></li>
+      <li><strong>時間基準</strong>：徒歩15分（≒1.2km）／自転車5分<sup class="ref"><a href="#r9">[9]</a></sup></li>
+      <li><strong>核となる手法</strong>：既存施設の<strong>多機能転換</strong>。学校を「街区の首都」に、Oasis校庭の緑化<sup class="ref"><a href="#r2">[2]</a></sup></li>
+      <li><strong>実績</strong>：Oasis校庭 203、rues aux écoles（学校前通り）300本超、PLU bioclimatique で公共住宅40%目標<sup class="ref"><a href="#r6">[6]</a></sup></li>
+      <li><strong>制度</strong>：区長権限強化、Paris Santé（保健近接）、近隣商業支援(SEMAEST)<sup class="ref"><a href="#r2">[2]</a></sup></li>
+    </ul>
+  </div>
+  <div class="card">
+    <h4>事例B：Nordhavn 5分都市（Fem-minutters-by）</h4>
+    <ul class="small">
+      <li><strong>性格</strong>：港湾跡地の<strong>白紙からのマスタープラン型新市街</strong><sup class="ref"><a href="#r3">[3]</a></sup></li>
+      <li><strong>時間基準</strong>：徒歩5分＝<strong>約400m</strong><sup class="ref"><a href="#r5">[5]</a></sup></li>
+      <li><strong>設計</strong>：住宅/職場から<strong>地下鉄・緑地・公共施設・商業・サイクルルート</strong>へ短距離。集約駐車、グリーンループ<sup class="ref"><a href="#r3">[3]</a></sup></li>
+      <li><strong>特徴</strong>：「青と緑の都市」（水辺）、DGNB認証、Århusgade地区に<strong>11種の機能混在</strong><sup class="ref"><a href="#r5">[5]</a></sup></li>
+      <li><strong>指標</strong>：地区内の自動車移動 27%、自転車・公共交通 54%（郊外より大幅に低自動車依存）<sup class="ref"><a href="#r5">[5]</a></sup></li>
+    </ul>
+  </div>
+</div>
+
+<h3>3.1 2事例の比較</h3>
+<table>
+  <thead><tr><th>観点</th><th>パリ 15分都市</th><th>Nordhavn 5分都市</th></tr></thead>
+  <tbody>
+    <tr><td>スケール</td><td>都市全体（既成市街地の再編）</td><td>地区スケールの新規開発</td></tr>
+    <tr><td>アプローチ</td><td>既存施設の多機能転換・道路空間再配分<sup class="ref"><a href="#r2">[2]</a></sup></td><td>街区・交通・駐車・用途を初期設計で統合<sup class="ref"><a href="#r3">[3]</a></sup></td></tr>
+    <tr><td>主導</td><td>行政（モレノ理論＋イダルゴ市政）<sup class="ref"><a href="#r6">[6]</a></sup></td><td>国・市・開発会社（By &amp; Havn）＋Ramboll<sup class="ref"><a href="#r3">[3]</a></sup></td></tr>
+    <tr><td>成果の見え方</td><td>市全体の実測値は豊富だが因果帰属が難しい<sup class="ref"><a href="#r6">[6]</a></sup></td><td>設計と地区挙動の一致は明確だが成熟指標は限定的<sup class="ref"><a href="#r5">[5]</a></sup></td></tr>
+    <tr><td>主な課題</td><td>都市圏の公平性、ジェントリフィケーション<sup class="ref"><a href="#r8">[8]</a></sup></td><td>住宅価格上昇、文化・スポーツ・教育施設の後追い整備<sup class="ref"><a href="#r5">[5]</a></sup></td></tr>
+  </tbody>
+</table>
+
+<h3>3.2 重みづけへの示唆（事例 → カテゴリ重み）</h3>
+<table>
+  <thead><tr><th style="width:20%">カテゴリ</th><th>2事例での扱い（根拠）</th><th style="width:14%">示唆</th></tr></thead>
+  <tbody>
+    <tr><td>教育（学ぶ）</td><td>パリ：学校を「街区の首都」とし多機能転換の中核<sup class="ref"><a href="#r2">[2]</a></sup>／Nordhavn：保育施設を住区に併設<sup class="ref"><a href="#r5">[5]</a></sup>。モレノも「学校を皆の集まる場に」<sup class="ref"><a href="#r1">[1]</a></sup></td><td>重み <strong>高</strong></td></tr>
+    <tr><td>自然（緑地・水辺）</td><td>パリ：Oasis校庭の緑化・緑の道路<sup class="ref"><a href="#r2">[2]</a></sup>／Nordhavn：「青と緑の都市」・水辺プロムナード<sup class="ref"><a href="#r3">[3]</a></sup>。モレノの4要素「有機物の密度」<sup class="ref"><a href="#r1">[1]</a></sup></td><td>重み <strong>高</strong></td></tr>
+    <tr><td>物資調達</td><td>パリ：近隣商業支援(SEMAEST)<sup class="ref"><a href="#r2">[2]</a></sup>／Nordhavn：地上階商業<sup class="ref"><a href="#r5">[5]</a></sup></td><td>重み 中〜高</td></tr>
+    <tr><td>医療・健康</td><td>パリ：Paris Santé による保健の近隣再配置<sup class="ref"><a href="#r2">[2]</a></sup>／モレノ「医療を住民の近くに」<sup class="ref"><a href="#r1">[1]</a></sup></td><td>重み 中〜高</td></tr>
+    <tr><td>公共交通結節</td><td>Nordhavn：「徒歩5分で地下鉄」＝近接＋ネットワーク型<sup class="ref"><a href="#r3">[3]</a></sup>。※モレノの6機能には含まれず、事例由来で追加</td><td>重み 中</td></tr>
+    <tr><td>娯楽・自己実現</td><td>パリ：文化施設の近接<sup class="ref"><a href="#r2">[2]</a></sup>／Nordhavn：Konditaget 等。両事例とも後追い課題<sup class="ref"><a href="#r5">[5]</a></sup></td><td>重み 中</td></tr>
+    <tr><td>仕事（働く）</td><td>両事例とも重要だが再配置の自由度が低く段階的<sup class="ref"><a href="#r6">[6]</a></sup></td><td>重み 中〜低</td></tr>
+  </tbody>
+</table>
+<div class="callout">
+<strong>結論：</strong>理論（モレノの6機能）と2事例の双方が <strong>教育と自然を近接の中核</strong>に置く。
+対象が「既存都市」であるため、思想的にはパリ型（既存ストックの多機能転換＝機能B）と直結する。
+Nordhavn 型の「白紙からの最適配置」は機能Cが対応する。
+</div>
+
+<!-- 4 -->
+<h2 id="s4"><span class="num">4.</span>システム概要</h2>
+<table>
+  <tbody>
+    <tr><th style="width:22%">形態</th><td>ArcGIS Pro 用 <strong>Python Toolbox（<code>.pyt</code>）</strong>（arcpy ＋ ArcGIS Network Analyst エクステンション）</td></tr>
+    <tr><th>対象</th><td>特定都市に依存しない<strong>汎用ツール</strong>。ユーザーの入力レイヤを標準カテゴリにマッピングして任意の都市で動作</td></tr>
+    <tr><th>利用者</th><td>都市計画・GISの分析担当者（演習・研究用途）</td></tr>
+  </tbody>
+</table>
+<h3>基本フロー</h3>
+<div class="flow">
+  <span class="step">① 入力データ整備・カテゴリマッピング</span><span class="arrow">→</span>
+  <span class="step">② n分到達圏算出（Service Area）</span><span class="arrow">→</span>
+  <span class="step">③ 重みづけ合成スコア</span><span class="arrow">→</span>
+  <span class="step">④ 診断→転換提案→最適配置</span><span class="arrow">→</span>
+  <span class="step">⑤ 可視化・シナリオ比較</span>
+</div>
+
+<!-- 5 -->
+<h2 id="s5"><span class="num">5.</span>機能要件</h2>
+
+<h3><span class="tag A">A</span>診断（中核）</h3>
+<ul>
+  <li>ユーザーが <strong>n（5/10/15/20分）と移動手段（徒歩／自転車）</strong> を指定する。</li>
+  <li>用途カテゴリ別に到達圏（Network Analyst: Service Area）を生成する。</li>
+  <li>各評価単位（人口メッシュ）について、カテゴリ別の到達可否／到達度を判定する。</li>
+  <li><strong>重みづけ合成スコア（n分都市度）</strong>を算出し、不足エリアと不足カテゴリの内訳を出力する。</li>
+  <li><strong>歩行環境の質（軸2）</strong>を併せて評価する：街路区間ごとの<strong>歩きたくなる街路スコア</strong>と、それで補正した実効到達圏を算出し、近接性スコア S と並置して診断する（詳細は§6.7）。</li>
+</ul>
+
+<h3><span class="tag B">B</span>改善提案 ── ルールベース（中核・非シミュレーション）</h3>
+<ul>
+  <li>スコアが低い／高重みカテゴリが欠落しているメッシュを<strong>不足エリア</strong>として抽出する。</li>
+  <li>不足メッシュ近傍の<strong>既存施設</strong>から、多機能転換が可能な候補（学校・公共施設＝<strong>パリ式クロノトピー</strong><sup class="ref"><a href="#r1">[1]</a></sup>）を空間近傍解析で抽出し、「何を・どこに」を<strong>根拠付き</strong>で提示する。</li>
+  <li><strong>新設なし・時間帯転換を第一候補</strong>とする：既存施設を時間帯で多機能化（例：放課後の学校を文化・コミュニティ機能に）して不足カテゴリを解消する案を、新規建設より優先して提示する（時間軸モデルは§6.7・要素B）。</li>
+  <li>提案の優先度＝ <code>w_c ×（解消される影響人口）</code>。透明なルールで導出する。</li>
+</ul>
+
+<h3><span class="tag C">C</span>最適配置 ── Location-Allocation（中核・発展）</h3>
+<ul>
+  <li>Network Analyst <strong>Location-Allocation</strong> で「新規／転換施設を k 箇所置くなら最適地はどこか」を、重みづけ人口カバー最大化で算出する。</li>
+  <li>候補地・施設数・重みを<strong>ユーザーが指定</strong>する。</li>
+  <li><strong>入力パラメータと重みが結果にどう効くかを併記</strong>し、機能Bのルールベース結果と並置して比較できるようにする。</li>
+</ul>
+<div class="warn">
+<strong>指摘②への配慮：</strong>機能Cはブラックボックスな自動最適化に陥らないよう、目的関数・重み・候補地の前提を明示し、
+あくまで重みづけ（A・B）を主役とする。最適配置は「もし置くなら」という補助的検討に位置づける。
+</div>
+
+<!-- 6 -->
+<h2 id="s6"><span class="num">6.</span>重みづけ設計（本書の中核）</h2>
+
+<h3>6.1 評価単位と起点</h3>
+<p>起点＝<strong>人口メッシュ</strong>とする。モレノの6機能のうち「住居」はこの起点に内包されるため、到達先カテゴリには含めない<sup class="ref"><a href="#r1">[1]</a></sup>。</p>
+
+<h3>6.2 カテゴリの導出</h3>
+<p>用途カテゴリは <strong>「モレノの6機能」を基礎</strong>とし、理論・事例の根拠に基づき2カテゴリを調整・追加する。</p>
+<table>
+  <thead><tr><th>本ツールのカテゴリ</th><th>由来</th></tr></thead>
+  <tbody>
+    <tr><td>学ぶ（教育）／健康（医療）／物資調達／娯楽（自己実現）／仕事</td><td>モレノの6機能のうち5つ<sup class="ref"><a href="#r1">[1]</a></sup>（住居は起点に内包）</td></tr>
+    <tr><td><strong>自然（緑地・水辺）</strong></td><td>6機能には非含。モレノの4要素「有機物の密度」＋トポフィリー<sup class="ref"><a href="#r1">[1]</a></sup>、2事例の重視<sup class="ref"><a href="#r2">[2]</a></sup><sup class="ref"><a href="#r3">[3]</a></sup>を根拠に<strong>追加</strong></td></tr>
+    <tr><td><strong>公共交通結節</strong></td><td>6機能には非含。Nordhavn「5分で地下鉄」の近接＋ネットワーク型<sup class="ref"><a href="#r3">[3]</a></sup>を根拠に<strong>追加</strong></td></tr>
+  </tbody>
+</table>
+
+<h3>6.3 初期重み（正規化 Σ=1.0）</h3>
+<p>理論上6機能は概ね同格に扱われるが<sup class="ref"><a href="#r1">[1]</a></sup>、2事例が実際に重視する<strong>教育・自然を最重視</strong>として初期値を設定する（§3.2）。</p>
+<table>
+  <thead><tr><th>カテゴリ</th><th style="width:30%">初期重み</th><th>根拠（出典）</th></tr></thead>
+  <tbody>
+    <tr><td>学ぶ（学校・保育・図書）</td><td><span class="w-bar" style="width:90px"></span>0.18</td><td>「学校＝街区の首都」<sup class="ref"><a href="#r2">[2]</a></sup>、モレノ「学校を皆の集まる場に」<sup class="ref"><a href="#r1">[1]</a></sup></td></tr>
+    <tr><td>自然（公園・緑地・水辺）</td><td><span class="w-bar" style="width:90px"></span>0.18</td><td>Oasis校庭<sup class="ref"><a href="#r2">[2]</a></sup>、Nordhavn「青と緑の都市」<sup class="ref"><a href="#r3">[3]</a></sup>、有機物の密度<sup class="ref"><a href="#r1">[1]</a></sup></td></tr>
+    <tr><td>物資調達（日常商業・食料品）</td><td><span class="w-bar" style="width:75px"></span>0.15</td><td>近隣商業支援(SEMAEST)<sup class="ref"><a href="#r2">[2]</a></sup>、Nordhavn 地上階商業<sup class="ref"><a href="#r5">[5]</a></sup></td></tr>
+    <tr><td>医療・健康</td><td><span class="w-bar" style="width:70px"></span>0.14</td><td>Paris Santé<sup class="ref"><a href="#r2">[2]</a></sup>、モレノ「医療を住民の近くに」<sup class="ref"><a href="#r1">[1]</a></sup></td></tr>
+    <tr><td>公共交通結節（駅・主要停留所）</td><td><span class="w-bar" style="width:65px"></span>0.13</td><td>Nordhavn「5分で地下鉄」<sup class="ref"><a href="#r3">[3]</a></sup></td></tr>
+    <tr><td>娯楽・自己実現（文化・スポーツ）</td><td><span class="w-bar" style="width:60px"></span>0.12</td><td>パリ文化近接<sup class="ref"><a href="#r2">[2]</a></sup>、Nordhavn Konditaget。後追い課題ゆえ中位<sup class="ref"><a href="#r5">[5]</a></sup></td></tr>
+    <tr><td>仕事（就業・オフィス）</td><td><span class="w-bar" style="width:50px"></span>0.10</td><td>再配置の自由度が低く両事例とも段階的<sup class="ref"><a href="#r6">[6]</a></sup></td></tr>
+    <tr><td><strong>合計</strong></td><td><strong>1.00</strong></td><td>—</td></tr>
+  </tbody>
+</table>
+<div class="callout">
+これらは<strong>初期値（デフォルト）</strong>であり、<strong>ユーザーがスライダー等で変更でき、結果が即再計算</strong>される。
+重みを振ったときに不足エリアがどう変化するかを示す<strong>感度分析</strong>を備える（指摘③の中心機能）。
+</div>
+
+<h3>6.4 時間基準</h3>
+<p>n（5/10/15/20分）と移動手段（徒歩 ＝ 4.8 km/h ／ 自転車）をユーザーが指定する。
+事例との対応：パリ ＝ 徒歩15分 ≒ 1.2 km<sup class="ref"><a href="#r9">[9]</a></sup>、Nordhavn ＝ 徒歩5分 ≒ 400 m<sup class="ref"><a href="#r5">[5]</a></sup>。</p>
+
+<h3>6.5 スコア定義</h3>
+<ul>
+  <li>カテゴリ別到達度 <code>a(i,c)</code>：<strong>二値</strong>（n分圏内に1施設以上 → 1、なければ 0）を基本とする。<strong>段階版</strong>（到達施設数・距離減衰）を任意で選択可能とする。</li>
+  <li><strong>時間依存版（任意）</strong>：クロノトピー（§6.7・要素B）を扱う場合、到達度を時間帯 t（朝／日中／夕夜・曜日）に拡張した <code>a(i,c,t)</code> を用い、時間帯別スコア <code>S(i,t)</code> を算出できる。</li>
+</ul>
+<div class="formula">
+  <strong>n分都市度スコア</strong>　 S(i) = Σ<sub>c</sub> w<sub>c</sub> × a(i,c)　∈ [0, 1] 　（Σ w<sub>c</sub> = 1）
+</div>
+<table>
+  <thead><tr><th>スコア</th><th>評価</th><th>意味</th></tr></thead>
+  <tbody>
+    <tr><td>S ≥ 0.8</td><td>良好</td><td>主要機能の大半に n 分でアクセス可能</td></tr>
+    <tr><td>0.5 ≤ S &lt; 0.8</td><td>要改善</td><td>一部の重要機能が n 分圏外</td></tr>
+    <tr><td>S &lt; 0.5</td><td>不足</td><td>近接性が大きく欠如。優先的に改善対象</td></tr>
+  </tbody>
+</table>
+
+<h3>6.6 改善ロジック（評価から提案へ）</h3>
+<ul>
+  <li><strong>不足の特定</strong>：S(i) が低い、または高重みカテゴリで a(i,c)=0 のメッシュを抽出する。</li>
+  <li><strong>機能B（転換提案）</strong>：不足メッシュ近傍の既存施設で多機能転換可能な候補を抽出し、優先度 <code>w_c ×（解消される影響人口）</code> で順位付けする。</li>
+  <li><strong>機能C（最適配置）</strong>：重みづけ人口カバー最大化を目的関数として、k 箇所の最適地を算出する。</li>
+</ul>
+
+<h3 id="s6q">6.7 都市デザインの質レイヤ（軸2）</h3>
+<p>§6.5 までのスコア <code>S(i)</code> は<strong>「到達できるか（量＝近接性）」</strong>のみを測る。しかしモレノは
+「道や広場、街並みは、社会生活が営まれる場であり、市民としての生活の基盤である。都市は交通のための場所であるだけではない」と述べ<sup class="ref"><a href="#r1">[1]</a></sup>、
+近接性（4要素の一つ）だけでなく<strong>場所の質と体験</strong>を都市デザインの核に置く。本節では、量の軸 S とは別に
+<strong>「その道・場所の質（体験）」を測る環境の質スコア <code>Q(i)</code>（軸2）</strong>を追加する。
+両者は原則<strong>合成せず並置</strong>し、「近接はできるが街路の質が低い」メッシュなどを新たに診断できるようにする（指摘②に配慮し、質レイヤも調整可能な重みで透明に効く指標に限定する）。</p>
+
+<h4>要素A：歩行環境の質（歩きたくなる街路）</h4>
+<p>「同じ15分でも、敵対的な街路では狭く、心地よい街路では広く到達する」を表現するため、街路区間ごとに品質を 0–1 で評価し、
+ネットワークのインピーダンス（実効的な歩行時間）を補正する。パリの <em>rues aux écoles</em>（学校前通り）・緑の道路<sup class="ref"><a href="#r2">[2]</a></sup> が根拠。</p>
+<table>
+  <thead><tr><th>サブ指標</th><th>意味（高いほど良い）</th></tr></thead>
+  <tbody>
+    <tr><td>歩道の有無・幅員</td><td>歩行者空間が確保され、ゆとりがあるか</td></tr>
+    <tr><td>自動車交通からの分離</td><td>交通量・速度からの安全な分離（歩車分離・速度抑制）</td></tr>
+    <tr><td>緑陰・緑視率</td><td>沿道の緑・木陰の量（有機物の密度<sup class="ref"><a href="#r1">[1]</a></sup>）</td></tr>
+    <tr><td>沿道1階の活気（アクティブフロンテージ）</td><td>1階に店舗・入口・窓が連続し、通りに「目」があるか</td></tr>
+    <tr><td>水辺・景観への接触</td><td>水辺プロムナード等、眺めや自然との接触<sup class="ref"><a href="#r3">[3]</a></sup></td></tr>
+  </tbody>
+</table>
+<p>出力＝区間別の<strong>歩きたくなる街路スコア</strong>、および補正後の<strong>実効到達圏</strong>（質の低い街路は到達圏が縮む）。</p>
+
+<h4>要素B：多機能転換＝クロノトピー（時間軸モデル）</h4>
+<p>モレノのクロノトピーは「一日の時間帯によって同じ場所の用途を切り替えたり（駐車場、教室……）、曜日によって変えたり（市場、校庭）」する考え方である<sup class="ref"><a href="#r1">[1]</a></sup>。
+これを反映し、到達度を時間帯 t に拡張した <code>a(i,c,t)</code> を用いる（§6.5）。機能B（改善提案）では、
+<strong>新しい施設を建てずに時間帯転換でスコアを上げる案を第一候補</strong>として提示する（例：放課後の学校＝文化・コミュニティ、夜間の駐車場＝市場）。</p>
+
+<h4>要素C：感性に寄った体験指標</h4>
+<p>GIS的なカウントに乗らない「街の手触り」を、<strong>透明な代理指標</strong>で表現する。モレノが場所への愛着を育てる
+<strong>トポフィリー（場所への愛）</strong>を重視する<sup class="ref"><a href="#r1">[1]</a></sup>ことが根拠。</p>
+<table>
+  <thead><tr><th>体験指標</th><th>代理指標（測り方）</th></tr></thead>
+  <tbody>
+    <tr><td>にぎわい・活気</td><td>沿道アクティブフロンテージ率・用途混在度（混在性の代理）</td></tr>
+    <tr><td>居場所・滞留（サードプレイス）</td><td>広場・ベンチ・カフェ・水辺など滞留点への近接</td></tr>
+    <tr><td>場所への愛着（トポフィリー）</td><td>緑・水辺・歴史/文化資源への近接や眺望<sup class="ref"><a href="#r1">[1]</a></sup></td></tr>
+    <tr><td>時間帯による街の表情</td><td>朝/昼/夕で到達機能とにぎわいがどう変わるか（クロノトピーの体験的可視化）</td></tr>
+  </tbody>
+</table>
+
+<h4>6.7.1 環境の質スコア Q(i) と統合</h4>
+<div class="formula">
+  <strong>環境の質スコア</strong>　 Q(i) = Σ<sub>q</sub> v<sub>q</sub> × b(i,q)　∈ [0, 1] 　（Σ v<sub>q</sub> = 1）
+</div>
+<p>ここで <code>b(i,q)</code> は各質指標（要素A・Cの 0–1 値）、<code>v<sub>q</sub></code> はその重み。<strong>v も S の重み w と同様にユーザーが調整でき、感度分析の対象</strong>とする。</p>
+<div class="callout">
+<strong>並置を基本・統合は別シナリオ：</strong>診断は近接性 <code>S(i)</code> と質 <code>Q(i)</code> を<strong>並べて</strong>示すことを既定とする。
+必要に応じ統合ビュー <code>S*(i) = S(i) × f(Q(i))</code> を<strong>別シナリオ</strong>として提示するが、合成は既定では行わない（量と質を混ぜてブラックボックス化しないため。指摘②）。
+</div>
+
+<!-- 7 -->
+<h2 id="s7"><span class="num">7.</span>データ要件</h2>
+<p>入力は「ユーザーのレイヤ → 標準カテゴリ」へのマッピング方式とする。日本の都市を想定した推奨データ源を併記する。</p>
+<table>
+  <thead><tr><th>種別</th><th>用途</th><th>推奨データ源（日本）</th></tr></thead>
+  <tbody>
+    <tr><td>道路網</td><td>Network Dataset 構築（徒歩／自転車）</td><td>OpenStreetMap、国土数値情報、基盤地図情報</td></tr>
+    <tr><td>人口（起点）</td><td>評価単位</td><td>国勢調査 250m / 500m メッシュ</td></tr>
+    <tr><td>施設点</td><td>カテゴリ別到達圏</td><td>国土数値情報（医療機関・学校・福祉施設）、OSM POI</td></tr>
+    <tr><td>緑地・自然</td><td>「自然」カテゴリ</td><td>国土数値情報（都市公園・緑地ポリゴン）</td></tr>
+    <tr><td>街路属性（軸2）</td><td>歩行環境の質：歩道有無・幅員・1階用途・沿道緑・水辺接触</td><td>OpenStreetMap タグ（<code>sidewalk</code>/<code>highway</code>/<code>shop</code> 等）、都市計画基礎調査（建物用途）、緑被率（衛星・航空写真）</td></tr>
+  </tbody>
+</table>
+<ul>
+  <li>施設には<strong>カテゴリ属性</strong>が必須。マッピング表（config）で標準7カテゴリに対応づける。</li>
+  <li>ネットワークが無い都市向けに、簡易版として<strong>直線距離バッファ近似</strong>をフォールバックで用意する（精度は劣る旨を明示）。</li>
+</ul>
+
+<!-- 8 -->
+<h2 id="s8"><span class="num">8.</span>非機能要件</h2>
+<ul>
+  <li>ArcGIS Pro（バージョン明記）＋ <strong>Network Analyst エクステンション</strong>を前提とする。</li>
+  <li>重み変更 → 再計算は、中規模都市（数万メッシュ）で実用的な応答時間で完了する。</li>
+  <li>パラメータ（n・移動手段・重み・しきい値）は再現可能な形で保存する（シナリオ管理）。</li>
+  <li>解析手法・前提・限界をレポート出力する（学術発表での説明責任、指摘②）。</li>
+</ul>
+
+<!-- 9 -->
+<h2 id="s9"><span class="num">9.</span>出力・可視化</h2>
+<ul>
+  <li>カテゴリ別到達圏マップ／<strong>合成スコアのヒートマップ</strong>／<strong>不足エリアの強調表示</strong>。</li>
+  <li>改善提案（転換候補・最適配置）の地図表現。</li>
+  <li><strong>シナリオ比較</strong>：現状 vs 重み変更後 vs 提案実施後を並置する。</li>
+  <li>重みづけ<strong>感度分析</strong>の図表。</li>
+  <li><strong>歩きたくなる街路ヒートマップ</strong>（軸2・要素A）：街路区間ごとの質を地図上に色分け表示する。</li>
+  <li><strong>質×近接の散布図</strong>：各メッシュを 近接性 S × 環境の質 Q の2軸に配置し、「近接はできるが質が低い」象限などを可視化する。</li>
+  <li><strong>時間帯による街の表情</strong>（軸2・要素B/C）：朝/昼/夕で到達機能とにぎわいがどう変わるかをアニメーション/切替で表現する。</li>
+</ul>
+
+<!-- 10 -->
+<h2 id="s10"><span class="num">10.</span>開発フェーズ</h2>
+<table>
+  <thead><tr><th>フェーズ</th><th>内容</th></tr></thead>
+  <tbody>
+    <tr><td>Phase 0</td><td>データ整備・Network Dataset 構築・カテゴリマッピング config</td></tr>
+    <tr><td>Phase 1（MVP）</td><td>機能A（カテゴリ別到達圏＋重み合成スコア＋不足可視化）＋重み調整UI</td></tr>
+    <tr><td>Phase 2</td><td>機能B（ルールベース転換提案）＋感度分析</td></tr>
+    <tr><td>Phase 3</td><td>機能C（Location-Allocation 最適配置）＋シナリオ比較</td></tr>
+  </tbody>
+</table>
+<div class="warn"><strong>注：</strong>本書は要件定義であり、ツール本体（<code>.pyt</code>）の実装・実データ解析は<strong>本段階のスコープ外</strong>とする。</div>
+
+<!-- 11 -->
+<h2 id="s11"><span class="num">11.</span>留意点・論点</h2>
+<ul>
+  <li>近接性都市への批判（<strong>ジェントリフィケーション・排除・アクセスの特権化</strong>）<sup class="ref"><a href="#r8">[8]</a></sup>を踏まえ、スコアは利便性だけでなく<strong>公平性の観点</strong>（不足エリア＝弱者地域になりやすい）も読み取れるようにする。</li>
+  <li>「シミュレーションに寄りすぎない」：機能Cは重み・パラメータが透明に効く設計とし、あくまで重みづけ（A・B）を主役とする。</li>
+  <li><strong>質レイヤ（§6.7）は代理指標</strong>である：歩行環境の質・にぎわい・トポフィリーは直接計測できないため代理指標で近似する。各指標の定義と重み <code>v<sub>q</sub></code> を明示し、量（S）と質（Q）を安易に合成せず<strong>並置</strong>することで、ブラックボックス化を避ける。</li>
+  <li>n や移動速度の前提（徒歩 4.8 km/h 等）は明示し、事例（パリ徒歩15分 ≒ 1.2 km）と対応づける。</li>
+  <li>近接性（ローカル自足）と アクセシビリティ（到達しやすさ）は別概念であり、本ツールは前者を測る点を明記する<sup class="ref"><a href="#r9">[9]</a></sup>。</li>
+</ul>
+
+<!-- 12 -->
+<h2 id="s12"><span class="num">12.</span>参考文献・出典</h2>
+<ol class="reflist">
+  <li id="r1">[1] カルロス・モレノ『15分都市（La ville du quart d'heure）』日本語訳テキスト。特に第1章「生きている都市」・第6章「近接性の実験／15分都市」。<br>
+    主な引用：6つの社会的機能（住居・仕事・必要なものの入手・教育・健康・娯楽）、都市の4要素（近接性・混在性・密度・遍在性）、クロノトピー（学校の多機能転換）。<br>
+    <span class="small">原典ファイル：<code>reference/カルロスモレノ_15分都市.md</code></span></li>
+  <li id="r2">[2] Ville de Paris（パリ市公式）「Paris ville du quart d'heure / Big Bang de la proximité / Pacte parisien de la proximité」。<br>
+    <a href="https://www.paris.fr/dossiers/paris-ville-du-quart-d-heure-ou-le-pari-de-la-proximite-37">https://www.paris.fr/dossiers/paris-ville-du-quart-d-heure-ou-le-pari-de-la-proximite-37</a></li>
+  <li id="r3">[3] Ramboll「Nordhavn: blueprint for a 5-minute city」。<br>
+    <a href="https://www.ramboll.com/projects/real-estate/nordhavn-blueprint-for-a-5-minute-city">https://www.ramboll.com/projects/real-estate/nordhavn-blueprint-for-a-5-minute-city</a></li>
+  <li id="r4">[4] Carlos Moreno 公式「Urban proximity and the love for places: Chrono-urbanism, Chronotopia, Topophilia」(2021)。<br>
+    <a href="https://www.moreno-web.net/urban-proximity-and-the-love-for-places-chrono-urbanism-chronotopia-topophilia-by-carlos-moreno/">https://www.moreno-web.net/urban-proximity-and-the-love-for-places-...</a></li>
+  <li id="r5">[5] By &amp; Havn（Nordhavn 開発主体）公式資料・CSR報告（5分都市＝徒歩400m、地区内モビリティ比率、DGNB、機能混在）。本演習の調査レポート[6]に詳述。</li>
+  <li id="r6">[6] 演習調査レポート「パリとコペンハーゲン北港の近接都市戦略（deep-research-report）」。2事例の制度・施策・定量指標・批判の一次資料を統合。<br>
+    <span class="small">原典ファイル：<code>reference/deep-research-report …html</code></span></li>
+  <li id="r7">[7] UCCRN European Hub「15-Minute City」（4原則）。<br>
+    <a href="https://www.uccrn.education/15-minute-city/">https://www.uccrn.education/15-minute-city/</a></li>
+  <li id="r8">[8] Journal of the American Planning Association「Decoding the 15-Minute City Debate」(2024)（批判・論点）。<br>
+    <a href="https://www.tandfonline.com/doi/full/10.1080/01944363.2024.2346596">https://www.tandfonline.com/doi/full/10.1080/01944363.2024.2346596</a></li>
+  <li id="r9">[9] 演習発表資料「近接性都市と2つの事例」（2事例の比較・時間基準・近接性 vs アクセシビリティの整理）。<br>
+    <span class="small">原典ファイル：<code>reference/近接性都市と2つの事例 …html</code></span></li>
+</ol>
+
+<footer>
+  要件定義書 v1.1 ／ 都市デザイン特別演習 ／ 作成日 2026-06-22<br>
+  本書は近接性都市の理論（モレノ）と2事例（パリ15分都市・Nordhavn 5分都市）の出典に基づく、ArcGIS Pro 用「n分都市化支援ツール」の要件定義である。
+</footer>
+
+</div>
+</body>
+</html>

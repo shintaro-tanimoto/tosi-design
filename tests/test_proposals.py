@@ -5,6 +5,7 @@ import pytest
 from nmincity.config import CATEGORY_WEIGHTS, TIME_CONVERSIONS
 from nmincity.core.proposals import (
     Proposal,
+    apply_proposals,
     find_deficiencies,
     multifunction_proposals,
     rank_proposals,
@@ -57,6 +58,7 @@ def test_time_conversion_proposals_counts_only_reachable_source_origins():
     assert proposal.time_bucket == "evening"
     assert proposal.source_category == "education"
     assert proposal.affected_population == 2.0
+    assert proposal.affected_origins == ("a", "c")
     assert proposal.priority == pytest.approx(CATEGORY_WEIGHTS["leisure"] * 2)
 
 
@@ -89,10 +91,38 @@ def test_multifunction_proposals_aggregates_population_by_facility():
     by_facility = {proposal.facility: proposal for proposal in result}
 
     assert by_facility["school-1"].affected_population == 5.0
+    assert by_facility["school-1"].affected_origins == ("a", "b")
     assert by_facility["school-1"].priority == pytest.approx(CATEGORY_WEIGHTS["health"] * 5.0)
     assert by_facility["school-1"].source_category == "education"
     assert by_facility["hall-1"].affected_population == 8.0
+    assert by_facility["hall-1"].affected_origins == ("b", "c")
     assert by_facility["hall-1"].priority == pytest.approx(CATEGORY_WEIGHTS["health"] * 8.0)
+
+
+def test_apply_proposals_marks_targets_without_mutating_input():
+    reach_by_origin = {
+        "a": {"health": False, "education": True},
+        "b": {"health": False, "education": False},
+        "c": {"health": False, "education": False},
+    }
+    proposal = Proposal(
+        kind="multifunction",
+        target_category="health",
+        source_category="education",
+        time_bucket=None,
+        facility="school-1",
+        affected_population=2.0,
+        priority=1.0,
+        rationale="test",
+        affected_origins=("a", "b"),
+    )
+
+    updated = apply_proposals(reach_by_origin, [proposal])
+
+    assert updated["a"]["health"] is True
+    assert updated["b"]["health"] is True
+    assert updated["c"]["health"] is False
+    assert reach_by_origin["a"]["health"] is False
 
 
 def test_proposal_is_frozen_dataclass_with_required_fields():
@@ -106,6 +136,7 @@ def test_proposal_is_frozen_dataclass_with_required_fields():
         "affected_population",
         "priority",
         "rationale",
+        "affected_origins",
     }
     proposal = _proposal("leisure", 1.0, 1.0)
 

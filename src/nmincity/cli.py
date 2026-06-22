@@ -31,6 +31,14 @@ def build_parser() -> argparse.ArgumentParser:
     propose_parser.add_argument("--top", type=int, default=10, help="表示する上位提案件数")
     propose_parser.set_defaults(func=propose)
 
+    compare_parser = subparsers.add_parser("compare", help="重み感度分析とシナリオ比較を生成する")
+    compare_parser.add_argument("--place", default=DEFAULT_PLACE, help="対象地区名")
+    compare_parser.add_argument("--minutes", type=float, default=15, help="到達圏の分数")
+    compare_parser.add_argument("--mode", choices=MODES, default="walk", help="移動手段")
+    compare_parser.add_argument("--sample", type=int, default=None, help="評価起点のサンプル数")
+    compare_parser.add_argument("--top", type=int, default=10, help="提案実施後シナリオに使う上位提案件数")
+    compare_parser.set_defaults(func=compare)
+
     return parser
 
 
@@ -208,6 +216,75 @@ def propose(args: argparse.Namespace) -> int:
     print("影響人口は人口メッシュ未接続のため、起点数ベースの近似です。")
     print(proposals.summarize(ranked))
     print(f"proposal_map: {output_path}")
+    return 0
+
+
+def compare(args: argparse.Namespace) -> int:
+    """M3b: 感度分析とシナリオ比較を生成する."""
+
+    from nmincity.backend.osmnx_backend import OsmnxBackend
+    from nmincity.config import CATEGORY_NAMES, CATEGORY_WEIGHTS
+    from nmincity.core import proposals, sensitivity
+    from nmincity.data import loader
+    from nmincity.viz.charts import reach_rate_chart, scenario_chart, sensitivity_chart
+
+    graph = loader.load_graph(args.place, args.mode)
+    category_nodes = loader.load_category_nodes(graph, args.place)
+    backend = OsmnxBackend(graph, category_nodes, args.mode)
+    origins = loader.make_origins(graph, args.sample)
+
+    reach_by_origin: dict[object, dict[str, bool]] = {}
+    service_areas: dict[object, set] = {}
+    for origin in origins:
+        reach_by_origin[origin] = backend.reachable_categories(origin, args.minutes, args.mode)
+        service_areas[origin] = backend.service_area(origin, args.minutes, args.mode)
+
+    deficiencies = proposals.find_deficiencies(reach_by_origin)
+    time_based = proposals.time_conversion_proposals(deficiencies, reach_by_origin)
+    nearby_convertible = _nearby_convertible(deficiencies, service_areas, category_nodes)
+    multifunction = proposals.multifunction_proposals(deficiencies, nearby_convertible)
+    ranked = proposals.rank_proposals(time_based + multifunction, top_n=args.top)
+
+    rates = sensitivity.reach_rate(reach_by_origin)
+    sens = sensitivity.category_sensitivity(reach_by_origin)
+    comparison = sensitivity.compare_scenarios(reach_by_origin, ranked)
+    linear_mean = sum(CATEGORY_WEIGHTS[category] * rates[category] for category in CATEGORY_WEIGHTS)
+
+    base = f"outputs/{_safe_filename(args.place)}_compare_{args.minutes:g}min_{args.mode}"
+    scenario_path = f"{base}_scenarios.html"
+    sensitivity_path = f"{base}_sensitivity.html"
+    rates_path = f"{base}_reach_rates.html"
+    scenario_chart(comparison, f"{args.place} ({args.minutes:g}min, {args.mode})", scenario_path)
+    sensitivity_chart(sens, f"{args.place} ({args.minutes:g}min, {args.mode})", sensitivity_path)
+    reach_rate_chart(rates, f"{args.place} ({args.minutes:g}min, {args.mode})", rates_path)
+
+    print(f"place: {args.place}")
+    print(f"origins: {len(origins)}")
+    print(f"proposals_used: {len(ranked)}")
+    print("mean_S は Σ normalized(w_c) * reach_rate[c] として説明できます。")
+    print(f"baseline_linear_mean_S: {linear_mean:.3f}")
+    print("")
+    print("scenario\tmean_S\tmin_S\tmax_S\t良好\t要改善\t不足")
+    for name, values in comparison.items():
+        print(
+            f"{name}\t"
+            f"{values['mean']:.3f}\t{values['min']:.3f}\t{values['max']:.3f}\t"
+            f"{values['label_good']:.0f}\t"
+            f"{values['label_needs_improvement']:.0f}\t"
+            f"{values['label_deficient']:.0f}"
+        )
+    print("")
+    print("category\tweight\treach_rate\tΔmean_S(+0.05)")
+    for category in CATEGORY_WEIGHTS:
+        print(
+            f"{CATEGORY_NAMES.get(category, category)}\t"
+            f"{CATEGORY_WEIGHTS[category]:.3f}\t"
+            f"{rates[category]:.3f}\t"
+            f"{sens[category]:+.4f}"
+        )
+    print(f"scenario_chart: {scenario_path}")
+    print(f"sensitivity_chart: {sensitivity_path}")
+    print(f"reach_rate_chart: {rates_path}")
     return 0
 
 

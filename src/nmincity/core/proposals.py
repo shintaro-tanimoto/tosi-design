@@ -28,6 +28,7 @@ class Proposal:
     affected_population: float
     priority: float
     rationale: str
+    affected_origins: tuple[Any, ...] = ()
 
 
 def find_deficiencies(
@@ -99,6 +100,7 @@ def time_conversion_proposals(
                         f"{affected_population:g}起点で当該機能の不足を新設なしで解消"
                         "（クロノトピー、影響人口は起点数ベースの近似）。"
                     ),
+                    affected_origins=tuple(sorted(affected, key=str)),
                 )
             )
 
@@ -157,10 +159,30 @@ def multifunction_proposals(
                     f"{affected_population:g}起点の不足を解消"
                     "（影響人口は起点数ベースの近似）。"
                 ),
+                affected_origins=tuple(sorted(origins, key=str)),
             )
         )
 
     return proposals
+
+
+def apply_proposals(
+    reach_by_origin: Mapping[Any, Mapping[str, bool]],
+    proposals: list[Proposal],
+) -> dict[Any, dict[str, bool]]:
+    """提案実施後の到達可否を返す.
+
+    入力を変更せず、各提案の ``affected_origins`` について
+    ``target_category`` を到達済みにする単純な効果モデルである。
+    """
+
+    updated = {origin: dict(reach) for origin, reach in reach_by_origin.items()}
+    for proposal in proposals:
+        for origin in proposal.affected_origins:
+            if origin not in updated:
+                continue
+            updated[origin][proposal.target_category] = True
+    return updated
 
 
 def rank_proposals(proposals: list[Proposal], top_n: int | None = None) -> list[Proposal]:

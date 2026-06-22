@@ -11,6 +11,7 @@ requires-python = ">=3.10"
 dependencies = [
   "numpy",
   "pandas",
+  "plotly",
 ]
 
 [tool.setuptools.packages.find]
@@ -19,4 +20,3 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
-

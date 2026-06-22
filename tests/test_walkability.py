@@ -1,5 +1,6 @@
 import networkx as nx
 
+from nmincity.config import WALK_QUALITY_WEIGHTS
 from nmincity.core.score import quality_score
 from nmincity.core.walkability import (
     effective_travel_time,
@@ -88,7 +89,8 @@ def test_origin_quality_averages_reachable_edge_indicators():
             "greenery": 0.5,
             "active_frontage": 0.5,
             "water_scenery": 0.5,
-        }
+        },
+        WALK_QUALITY_WEIGHTS,
     )
 
     assert origin_quality(graph, {"A", "B", "C"}) == expected

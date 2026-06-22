@@ -11,7 +11,7 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
-from nmincity.config import QUALITY_WEIGHTS
+from nmincity.config import WALK_QUALITY_WEIGHTS
 from nmincity.core.score import quality_score
 
 
@@ -47,7 +47,7 @@ def segment_quality(
 ) -> float:
     """街路区間の品質を ``quality_score`` で 0..1 に集約する."""
 
-    return quality_score(indicators, QUALITY_WEIGHTS if weights is None else weights)
+    return quality_score(indicators, WALK_QUALITY_WEIGHTS if weights is None else weights)
 
 
 def impedance_factor(quality: float, beta: float) -> float:
@@ -69,13 +69,13 @@ def origin_quality(
     reachable_node_set: set[Any],
     weights: Mapping[str, float] | None = None,
 ) -> float:
-    """到達ノード集合が誘導する edge の平均指標から起点別 ``Q(i)`` を返す."""
+    """到達ノード集合が誘導する edge の平均指標から要素Aの質を返す."""
 
     nodes = set(reachable_node_set)
     if len(nodes) < 2:
         return 0.0
 
-    totals = {key: 0.0 for key in QUALITY_WEIGHTS}
+    totals = {key: 0.0 for key in WALK_QUALITY_WEIGHTS}
     count = 0
     for u, v, data in _edge_data(graph):
         if u not in nodes or v not in nodes:
@@ -88,7 +88,7 @@ def origin_quality(
     if count == 0:
         return 0.0
     averages = {key: value / count for key, value in totals.items()}
-    return quality_score(averages, QUALITY_WEIGHTS if weights is None else weights)
+    return quality_score(averages, WALK_QUALITY_WEIGHTS if weights is None else weights)
 
 
 def _sidewalk_score(highway: str, sidewalk: str) -> float:
@@ -126,10 +126,10 @@ def _traffic_separation_score(highway: str) -> float:
 def _stored_indicators(data: Mapping[str, Any]) -> dict[str, float]:
     raw = data.get("walk_indicators")
     if isinstance(raw, Mapping):
-        return {key: _clamp_unit(_safe_float(raw.get(key, 0.0))) for key in QUALITY_WEIGHTS}
+        return {key: _clamp_unit(_safe_float(raw.get(key, 0.0))) for key in WALK_QUALITY_WEIGHTS}
     return {
         key: _clamp_unit(_safe_float(data.get(f"q_{key}", 0.0)))
-        for key in QUALITY_WEIGHTS
+        for key in WALK_QUALITY_WEIGHTS
     }
 
 

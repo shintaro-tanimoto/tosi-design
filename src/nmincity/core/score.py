@@ -50,6 +50,21 @@ def quality_score(
     return _clamp_unit(score)
 
 
+def environment_quality(
+    walkability: float,
+    experiential: Mapping[str, float],
+    weights: Mapping[str, float] | None = None,
+) -> float:
+    """要素Aと要素Cを統合した ``Q(i)`` を返す.
+
+    質レイヤは代理指標であり、近接性 ``S`` と ``Q`` は既定では合成せず
+    並置して診断する。
+    """
+
+    indicators = {"walkability": walkability, **dict(experiential)}
+    return quality_score(indicators, QUALITY_WEIGHTS if weights is None else weights)
+
+
 def integrated_score(s: float, q: float, alpha: float = 1.0) -> float:
     """任意シナリオ用の統合スコア ``S*=S*f(Q)`` を返す.
 
@@ -72,4 +87,3 @@ def _require_unit_interval(value: float, name: str) -> None:
 
 def _clamp_unit(value: float) -> float:
     return max(0.0, min(1.0, float(value)))
-

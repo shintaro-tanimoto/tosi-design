@@ -1,5 +1,5 @@
-from nmincity.config import CATEGORY_WEIGHTS, QUALITY_WEIGHTS
-from nmincity.core.score import proximity_score, quality_score
+from nmincity.config import CATEGORY_WEIGHTS, QUALITY_WEIGHTS, WALK_QUALITY_WEIGHTS
+from nmincity.core.score import environment_quality, proximity_score, quality_score
 
 
 def test_proximity_score_all_true_is_one():
@@ -27,6 +27,18 @@ def test_quality_score_equal_weights():
         "active_frontage": 0.5,
         "water_scenery": 1.0,
     }
-    expected = sum(QUALITY_WEIGHTS[key] * value for key, value in indicators.items())
-    assert quality_score(indicators) == expected
+    expected = sum(WALK_QUALITY_WEIGHTS[key] * value for key, value in indicators.items())
+    assert quality_score(indicators, WALK_QUALITY_WEIGHTS) == expected
 
+
+def test_environment_quality_uses_top_level_quality_weights():
+    experiential = {
+        "liveliness": 0.5,
+        "lingering": 0.25,
+        "topophilia": 0.75,
+        "time_variation": 0.1,
+    }
+    expected = QUALITY_WEIGHTS["walkability"] * 0.8
+    expected += sum(QUALITY_WEIGHTS[key] * value for key, value in experiential.items())
+
+    assert environment_quality(0.8, experiential) == expected

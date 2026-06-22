@@ -30,11 +30,11 @@ def run(args: argparse.Namespace) -> int:
     """OSM 実データから機能A(MVP)の近接性スコア地図を生成する."""
 
     from nmincity.backend.osmnx_backend import OsmnxBackend
-    from nmincity.core import walkability
-    from nmincity.core.score import proximity_score
-    from nmincity.config import score_label
+    from nmincity.config import TIME_OF_DAY, score_label
+    from nmincity.core import chronotopia, experiential, walkability
+    from nmincity.core.score import environment_quality, proximity_score
     from nmincity.data import loader
-    from nmincity.viz.maps import save_map, score_map, sq_scatter, walkability_map
+    from nmincity.viz.maps import save_map, score_map, sq_scatter, time_of_day_map, walkability_map
 
     graph = loader.load_graph(args.place, args.mode)
     category_nodes = loader.load_category_nodes(graph, args.place)
@@ -46,6 +46,8 @@ def run(args: argparse.Namespace) -> int:
     scatter_points: list[tuple[float, float, str]] = []
     scores: list[float] = []
     qualities: list[float] = []
+    scores_by_bucket: dict[str, list[float]] = {bucket: [] for bucket in TIME_OF_DAY}
+    points_by_bucket: dict[str, list[tuple[float, float, float]]] = {bucket: [] for bucket in TIME_OF_DAY}
     labels: Counter[str] = Counter()
     origins = loader.make_origins(graph, args.sample)
 
@@ -53,12 +55,32 @@ def run(args: argparse.Namespace) -> int:
         weight = "eff_travel_time" if args.quality else "travel_time"
         reach = backend.reachable_categories(origin, args.minutes, args.mode, weight=weight)
         score = proximity_score(reach)
+        lon, lat = loader.node_lonlat(graph, origin)
         if args.quality:
             reachable = backend.service_area(origin, args.minutes, args.mode, weight=weight)
-            q_value = walkability.origin_quality(graph, reachable)
+            timed_scores = {
+                bucket: chronotopia.proximity_score_at(reach, bucket)
+                for bucket in TIME_OF_DAY
+            }
+            time_var = chronotopia.time_variation(timed_scores)
+            ctx = loader.origin_context(graph, origin, reachable, category_nodes)
+            exp_indicators = experiential.experiential_indicators(
+                active_frontage=ctx["active_frontage"],
+                leisure_proximity=ctx["leisure_proximity"],
+                water_proximity=ctx["water_proximity"],
+                greenery=ctx["greenery"],
+                reach=reach,
+                time_var=time_var,
+            )
+            q_value = environment_quality(
+                walkability.origin_quality(graph, reachable),
+                exp_indicators,
+            )
             qualities.append(q_value)
             scatter_points.append((score, q_value, score_label(score)))
-        lon, lat = loader.node_lonlat(graph, origin)
+            for bucket, bucket_score in timed_scores.items():
+                scores_by_bucket[bucket].append(bucket_score)
+                points_by_bucket[bucket].append((lat, lon, bucket_score))
         points.append((lat, lon, score))
         scores.append(score)
         labels[score_label(score)] += 1
@@ -79,6 +101,9 @@ def run(args: argparse.Namespace) -> int:
         q_average, q_minimum, q_maximum = _summary(qualities)
         print(f"S: avg={average:.3f}, min={minimum:.3f}, max={maximum:.3f}")
         print(f"Q: avg={q_average:.3f}, min={q_minimum:.3f}, max={q_maximum:.3f}")
+        for bucket in TIME_OF_DAY:
+            bucket_avg, _bucket_min, _bucket_max = _summary(scores_by_bucket[bucket])
+            print(f"S({bucket}): avg={bucket_avg:.3f}")
     else:
         print(f"score: avg={average:.3f}, min={minimum:.3f}, max={maximum:.3f}")
     print(
@@ -89,6 +114,7 @@ def run(args: argparse.Namespace) -> int:
     if args.quality:
         walk_path = f"outputs/{_safe_filename(args.place)}_walk_{args.minutes:g}min_{args.mode}.html"
         scatter_path = f"outputs/{_safe_filename(args.place)}_SxQ_{args.minutes:g}min_{args.mode}.png"
+        time_path = f"outputs/{_safe_filename(args.place)}_time_{args.minutes:g}min_{args.mode}.html"
         save_map(
             walkability_map(
                 loader.edge_quality_lines(graph),
@@ -101,8 +127,16 @@ def run(args: argparse.Namespace) -> int:
             f"{args.place} ({args.minutes:g}min, {args.mode})",
             scatter_path,
         )
+        save_map(
+            time_of_day_map(
+                points_by_bucket,
+                f"{args.place} ({args.minutes:g}min, {args.mode})",
+            ),
+            time_path,
+        )
         print(f"walkability_map: {walk_path}")
         print(f"SxQ_scatter: {scatter_path}")
+        print(f"time_of_day_map: {time_path}")
     return 0
 
 

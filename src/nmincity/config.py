@@ -68,13 +68,30 @@ CATEGORY_OSM_TAGS: dict[str, dict] = {
 # §6.7 要素B: クロノトピー用の時間帯バケット。
 TIME_OF_DAY = ["morning", "daytime", "evening"]
 
-# §6.7 要素A: 歩行環境の質サブ指標。等重みを初期値にし、v_q は感度分析対象にする。
-QUALITY_WEIGHTS: dict[str, float] = {
+# §6.7 要素A: 歩行環境の質サブ指標。等重みを初期値にする。
+WALK_QUALITY_WEIGHTS: dict[str, float] = {
     "sidewalk": 0.20,
     "traffic_separation": 0.20,
     "greenery": 0.20,
     "active_frontage": 0.20,
     "water_scenery": 0.20,
+}
+
+# §6.7 要素C: 体験指標の集約重み。代理指標のため感度分析対象にする。
+EXPERIENTIAL_WEIGHTS: dict[str, float] = {
+    "liveliness": 0.30,
+    "lingering": 0.30,
+    "topophilia": 0.25,
+    "time_variation": 0.15,
+}
+
+# §6.7.1 Qトップレベル重み: 要素A集約(walkability)＋要素Cを統合、感度分析対象。
+QUALITY_WEIGHTS: dict[str, float] = {
+    "walkability": 0.40,
+    "liveliness": 0.20,
+    "lingering": 0.15,
+    "topophilia": 0.15,
+    "time_variation": 0.10,
 }
 
 # §6.7 要素A: 質による歩行インピーダンス補正。質0で歩行時間2倍。
@@ -90,6 +107,24 @@ EXPERIENTIAL_INDICATORS = [
     "topophilia",
     "time_variation",
 ]
+
+# §6.7 要素B: 時間帯別の稼働度。開店・利用時間を近似する調整可能な代理値。
+CATEGORY_TIME_AVAILABILITY: dict[str, dict[str, float]] = {
+    "education": {"morning": 1.0, "daytime": 1.0, "evening": 0.2},
+    "health": {"morning": 1.0, "daytime": 1.0, "evening": 0.3},
+    "work": {"morning": 1.0, "daytime": 1.0, "evening": 0.3},
+    "goods": {"morning": 0.6, "daytime": 1.0, "evening": 0.8},
+    "leisure": {"morning": 0.4, "daytime": 0.8, "evening": 1.0},
+    "nature": {"morning": 1.0, "daytime": 1.0, "evening": 0.7},
+    "transit": {"morning": 1.0, "daytime": 1.0, "evening": 1.0},
+}
+
+# §6.7 要素B: モレノのクロノトピー(学校の多機能転換)に基づく、新設なし時間帯転換。
+TIME_CONVERSIONS: dict[str, list[dict[str, float | str]]] = {
+    "morning": [],
+    "daytime": [],
+    "evening": [{"source": "education", "target": "leisure", "factor": 0.7}],
+}
 
 
 def validate_weights(weights: dict[str, float] | None = None, *, tol: float = 1e-9) -> None:
@@ -114,4 +149,6 @@ def score_label(s: float) -> str:
 
 
 validate_weights(CATEGORY_WEIGHTS)
+validate_weights(WALK_QUALITY_WEIGHTS)
+validate_weights(EXPERIENTIAL_WEIGHTS)
 validate_weights(QUALITY_WEIGHTS)

@@ -79,6 +79,40 @@ def walkability_map(lines: list[tuple[list[tuple[float, float]], float]], place:
     return m
 
 
+def time_of_day_map(points_by_bucket: dict[str, list[tuple[float, float, float]]], place: str) -> folium.Map:
+    """時間帯ごとに ``(lat, lon, S(t))`` 点群を切替表示する地図を返す."""
+
+    all_points = [point for points in points_by_bucket.values() for point in points]
+    if all_points:
+        center_lat = sum(lat for lat, _lon, _score in all_points) / len(all_points)
+        center_lon = sum(lon for _lat, lon, _score in all_points) / len(all_points)
+    else:
+        center_lat, center_lon = 35.0, 139.0
+
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=15, tiles="cartodbpositron")
+    for bucket, points in points_by_bucket.items():
+        show = bucket == "daytime"
+        group = folium.FeatureGroup(name=bucket, show=show)
+        for lat, lon, score in points:
+            label = score_label(score)
+            color = LABEL_COLORS[label]
+            folium.CircleMarker(
+                location=[lat, lon],
+                radius=4,
+                color=color,
+                fill=True,
+                fill_color=color,
+                fill_opacity=0.72,
+                weight=1,
+                popup=f"{bucket}: S={score:.3f} / {label}",
+            ).add_to(group)
+        group.add_to(m)
+
+    folium.LayerControl(collapsed=False).add_to(m)
+    m.get_root().html.add_child(folium.Element(_legend_html(f"時間帯別 n分都市度: {place}")))
+    return m
+
+
 def sq_scatter(points: list[tuple[float, float, str]], place: str, path: str) -> None:
     """起点別の ``S`` と ``Q`` を並置する散布図 PNG を保存する."""
 

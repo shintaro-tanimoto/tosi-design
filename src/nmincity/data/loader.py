@@ -12,7 +12,7 @@ from nmincity.config import (
     CATEGORY_OSM_TAGS,
     IMPEDANCE_BETA,
     MODE_SPEED_KMH,
-    QUALITY_WEIGHTS,
+    WALK_QUALITY_WEIGHTS,
     WALK_CONTEXT_RADIUS_M,
 )
 from nmincity.core.walkability import (
@@ -144,7 +144,7 @@ def annotate_walkability(
                 "water_scenery": water_scenery,
             }
         )
-        for key in QUALITY_WEIGHTS:
+        for key in WALK_QUALITY_WEIGHTS:
             indicators[key] = _clamp_unit(float(indicators.get(key, 0.0)))
             data[f"q_{key}"] = indicators[key]
 
@@ -177,6 +177,39 @@ def edge_quality_lines(graph: Any) -> list[tuple[list[tuple[float, float]], floa
         if len(coords) >= 2:
             lines.append((coords, _clamp_unit(float(data.get("walk_quality", 0.0)))))
     return lines
+
+
+def origin_context(
+    graph: Any,
+    origin: Any,
+    reachable_node_set: set[Any],
+    category_nodes: dict[str, set],
+    radius_m: float | None = None,
+) -> dict[str, float]:
+    """起点別の体験指標入力を 0..1 で返す.
+
+    近傍 POI と到達 edge の歩行環境指標から作る代理値であり、観察調査や
+    実測の代替ではない。
+    """
+
+    selected_radius = WALK_CONTEXT_RADIUS_M if radius_m is None else radius_m
+    nodes = set(reachable_node_set)
+    edge_context = _reachable_edge_context(graph, nodes)
+    nature_nodes = set(category_nodes.get("nature", set()))
+    leisure_nodes = set(category_nodes.get("leisure", set()))
+
+    try:
+        water_proximity = _proximity_indicator(graph, [origin], nature_nodes, selected_radius)
+        leisure_proximity = _proximity_indicator(graph, [origin], leisure_nodes, selected_radius)
+    except Exception:
+        water_proximity = leisure_proximity = 0.0
+
+    return {
+        "active_frontage": edge_context.get("active_frontage", 0.0),
+        "greenery": edge_context.get("greenery", 0.0),
+        "water_proximity": max(edge_context.get("water_scenery", 0.0), water_proximity),
+        "leisure_proximity": leisure_proximity,
+    }
 
 
 def _iter_edges(graph: Any):
@@ -218,6 +251,27 @@ def _proximity_indicator(
     return _clamp_unit(1.0 - min_distance / float(radius_m))
 
 
+def _reachable_edge_context(graph: Any, nodes: set[Any]) -> dict[str, float]:
+    if len(nodes) < 2:
+        return {}
+
+    totals = {"active_frontage": 0.0, "greenery": 0.0, "water_scenery": 0.0}
+    count = 0
+    for u, v, data in _iter_edges(graph):
+        if u not in nodes or v not in nodes:
+            continue
+        indicators = data.get("walk_indicators")
+        if not isinstance(indicators, dict):
+            indicators = data
+        for key in totals:
+            totals[key] += _clamp_unit(_safe_float(indicators.get(key, data.get(f"q_{key}", 0.0))))
+        count += 1
+
+    if count == 0:
+        return {}
+    return {key: value / count for key, value in totals.items()}
+
+
 def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     radius = 6371000.0
     phi1 = math.radians(lat1)
@@ -226,6 +280,13 @@ def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     dlambda = math.radians(lon2 - lon1)
     a = math.sin(dphi / 2.0) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2.0) ** 2
     return 2.0 * radius * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
+
+
+def _safe_float(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _clamp_unit(value: float) -> float:

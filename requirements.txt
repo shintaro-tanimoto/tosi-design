@@ -1,0 +1,10 @@
+osmnx
+geopandas
+networkx
+shapely
+folium
+plotly
+pandas
+numpy
+pytest
+

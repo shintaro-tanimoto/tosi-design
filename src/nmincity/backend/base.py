@@ -14,7 +14,13 @@ class NetworkBackend(ABC):
     """
 
     @abstractmethod
-    def service_area(self, origin: Any, minutes: float, mode: str) -> Any:
+    def service_area(
+        self,
+        origin: Any,
+        minutes: float,
+        mode: str,
+        weight: str = "travel_time",
+    ) -> Any:
         """起点から指定分数で到達できる範囲を返す.
 
         Parameters
@@ -25,6 +31,8 @@ class NetworkBackend(ABC):
             到達圏の時間しきい値（分）。
         mode:
             移動手段。例: ``"walk"`` または ``"bike"``。
+        weight:
+            到達圏計算に使う edge 重み。既定は通常歩行時間。
 
         Returns
         -------
@@ -38,10 +46,10 @@ class NetworkBackend(ABC):
         origin: Any,
         minutes: float,
         mode: str,
+        weight: str = "travel_time",
     ) -> dict[str, bool]:
         """カテゴリ別到達度 ``a(i,c)`` を返す.
 
         返り値は ``category_slug -> bool`` の辞書で、1施設以上に到達できる場合
         ``True``、到達できない場合 ``False`` とする。
         """
-

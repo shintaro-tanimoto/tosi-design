@@ -68,7 +68,7 @@ CATEGORY_OSM_TAGS: dict[str, dict] = {
 # §6.7 要素B: クロノトピー用の時間帯バケット。
 TIME_OF_DAY = ["morning", "daytime", "evening"]
 
-# §6.7 要素A: 歩行環境の質サブ指標。M0b では等重みを初期値にする。
+# §6.7 要素A: 歩行環境の質サブ指標。等重みを初期値にし、v_q は感度分析対象にする。
 QUALITY_WEIGHTS: dict[str, float] = {
     "sidewalk": 0.20,
     "traffic_separation": 0.20,
@@ -76,6 +76,12 @@ QUALITY_WEIGHTS: dict[str, float] = {
     "active_frontage": 0.20,
     "water_scenery": 0.20,
 }
+
+# §6.7 要素A: 質による歩行インピーダンス補正。質0で歩行時間2倍。
+IMPEDANCE_BETA: float = 1.0
+
+# §6.7 要素A: 緑・沿道活動・水辺景観の近傍代理指標の半径(m)。
+WALK_CONTEXT_RADIUS_M: float = 150.0
 
 # §6.7 要素C: 体験指標。M0b では名称のみ定義する。
 EXPERIENTIAL_INDICATORS = [

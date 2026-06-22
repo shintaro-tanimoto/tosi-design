@@ -20,17 +20,24 @@ class OsmnxBackend(NetworkBackend):
         self.category_nodes = category_nodes
         self.mode = mode
 
-    def service_area(self, origin: Any, minutes: float, mode: str) -> set:
+    def service_area(
+        self,
+        origin: Any,
+        minutes: float,
+        mode: str,
+        weight: str = "travel_time",
+    ) -> set:
         """起点から ``minutes`` 分以内に到達できるノード集合を返す."""
 
         _ = mode
-        return reachable_nodes(self.graph, origin, float(minutes) * 60.0)
+        return reachable_nodes(self.graph, origin, float(minutes) * 60.0, weight=weight)
 
     def reachable_categories(
         self,
         origin: Any,
         minutes: float,
         mode: str,
+        weight: str = "travel_time",
     ) -> dict[str, bool]:
         """カテゴリ別到達度 ``a(i,c)`` を返す."""
 
@@ -40,4 +47,5 @@ class OsmnxBackend(NetworkBackend):
             origin,
             float(minutes) * 60.0,
             self.category_nodes,
+            weight=weight,
         )

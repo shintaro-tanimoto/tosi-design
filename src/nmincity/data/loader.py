@@ -8,7 +8,18 @@ from typing import Any
 
 import osmnx as ox
 
-from nmincity.config import CATEGORY_OSM_TAGS, MODE_SPEED_KMH
+from nmincity.config import (
+    CATEGORY_OSM_TAGS,
+    IMPEDANCE_BETA,
+    MODE_SPEED_KMH,
+    QUALITY_WEIGHTS,
+    WALK_CONTEXT_RADIUS_M,
+)
+from nmincity.core.walkability import (
+    effective_travel_time,
+    segment_indicators,
+    segment_quality,
+)
 
 
 ox.settings.use_cache = True
@@ -95,3 +106,127 @@ def node_lonlat(graph: Any, node: Any) -> tuple[float, float]:
     if not math.isfinite(lon) or not math.isfinite(lat):
         raise ValueError(f"node has invalid coordinates: {node}")
     return lon, lat
+
+
+def annotate_walkability(
+    graph: Any,
+    category_nodes: dict[str, set],
+    *,
+    beta: float | None = None,
+    radius_m: float | None = None,
+) -> None:
+    """各 edge に歩行環境の質と実効歩行時間を in-place で付与する.
+
+    文脈指標は近傍 POI からの代理指標であり、OSM データ欠損時は 0 として
+    継続する。近接性 ``S`` と質 ``Q`` は既定では合成せず並置する。
+    """
+
+    selected_beta = IMPEDANCE_BETA if beta is None else beta
+    selected_radius = WALK_CONTEXT_RADIUS_M if radius_m is None else radius_m
+    nature_nodes = set(category_nodes.get("nature", set()))
+    active_nodes = set(category_nodes.get("goods", set())) | set(category_nodes.get("leisure", set()))
+
+    for u, v, data in _iter_edges(graph):
+        indicators = segment_indicators(data)
+        try:
+            edge_nodes = [u, v]
+            greenery = _proximity_indicator(graph, edge_nodes, nature_nodes, selected_radius)
+            active_frontage = _proximity_indicator(graph, edge_nodes, active_nodes, selected_radius)
+            # TODO: water 系地物を別カテゴリとして取得できるようにし、nature 流用を置き換える。
+            water_scenery = _proximity_indicator(graph, edge_nodes, nature_nodes, selected_radius)
+        except Exception:
+            greenery = active_frontage = water_scenery = 0.0
+
+        indicators.update(
+            {
+                "greenery": greenery,
+                "active_frontage": active_frontage,
+                "water_scenery": water_scenery,
+            }
+        )
+        for key in QUALITY_WEIGHTS:
+            indicators[key] = _clamp_unit(float(indicators.get(key, 0.0)))
+            data[f"q_{key}"] = indicators[key]
+
+        quality = segment_quality(indicators)
+        data["walk_indicators"] = indicators
+        data["walk_quality"] = quality
+        data["eff_travel_time"] = effective_travel_time(
+            float(data.get("travel_time", 0.0)),
+            quality,
+            selected_beta,
+        )
+
+
+def edge_quality_lines(graph: Any) -> list[tuple[list[tuple[float, float]], float]]:
+    """可視化用に edge 形状 ``[(lat, lon), ...]`` と歩行品質を返す."""
+
+    lines: list[tuple[list[tuple[float, float]], float]] = []
+    for u, v, data in _iter_edges(graph):
+        coords: list[tuple[float, float]] = []
+        geometry = data.get("geometry")
+        if geometry is not None and hasattr(geometry, "coords"):
+            coords = [(float(lat), float(lon)) for lon, lat in geometry.coords]
+        else:
+            try:
+                u_lon, u_lat = node_lonlat(graph, u)
+                v_lon, v_lat = node_lonlat(graph, v)
+                coords = [(u_lat, u_lon), (v_lat, v_lon)]
+            except Exception:
+                coords = []
+        if len(coords) >= 2:
+            lines.append((coords, _clamp_unit(float(data.get("walk_quality", 0.0)))))
+    return lines
+
+
+def _iter_edges(graph: Any):
+    edges = graph.edges(keys=True, data=True) if graph.is_multigraph() else graph.edges(data=True)
+    for edge in edges:
+        if len(edge) == 4:
+            u, v, _key, data = edge
+        else:
+            u, v, data = edge
+        yield u, v, data
+
+
+def _proximity_indicator(
+    graph: Any,
+    edge_nodes: list[Any],
+    poi_nodes: set,
+    radius_m: float,
+) -> float:
+    if radius_m <= 0 or not poi_nodes:
+        return 0.0
+
+    min_distance = math.inf
+    for edge_node in edge_nodes:
+        try:
+            lon1, lat1 = node_lonlat(graph, edge_node)
+        except Exception:
+            continue
+        for poi_node in poi_nodes:
+            if poi_node not in graph.nodes:
+                continue
+            try:
+                lon2, lat2 = node_lonlat(graph, poi_node)
+            except Exception:
+                continue
+            min_distance = min(min_distance, _haversine_m(lat1, lon1, lat2, lon2))
+
+    if not math.isfinite(min_distance):
+        return 0.0
+    return _clamp_unit(1.0 - min_distance / float(radius_m))
+
+
+def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    radius = 6371000.0
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2.0) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2.0) ** 2
+    return 2.0 * radius * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
+
+
+def _clamp_unit(value: float) -> float:
+    return max(0.0, min(1.0, float(value)))

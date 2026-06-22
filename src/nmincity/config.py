@@ -26,9 +26,44 @@ CATEGORY_WEIGHTS: dict[str, float] = {
 }
 
 # §6.4 時間基準: 徒歩速度、n分オプション、移動手段。
+# MVP用の小さく歩ける地区。
+DEFAULT_PLACE = "谷中, 台東区, 東京都, 日本"
 WALK_SPEED_KMH = 4.8
+BIKE_SPEED_KMH = 15.0
 N_MINUTES_OPTIONS = [5, 10, 15, 20]
 MODES = ["walk", "bike"]
+MODE_SPEED_KMH: dict[str, float] = {"walk": WALK_SPEED_KMH, "bike": BIKE_SPEED_KMH}
+
+# osmnx 2.x ``features_from_place`` 用のカテゴリ別 OSM タグ。
+CATEGORY_OSM_TAGS: dict[str, dict] = {
+    "education": {"amenity": ["school", "kindergarten", "university", "college", "library"]},
+    "nature": {
+        "leisure": ["park", "garden"],
+        "landuse": ["forest", "grass", "recreation_ground"],
+        "natural": ["wood", "water"],
+    },
+    "goods": {
+        "shop": [
+            "supermarket",
+            "convenience",
+            "greengrocer",
+            "bakery",
+            "butcher",
+            "department_store",
+        ]
+    },
+    "health": {"amenity": ["hospital", "clinic", "doctors", "pharmacy", "dentist"]},
+    "transit": {
+        "railway": ["station"],
+        "public_transport": ["station"],
+        "highway": ["bus_stop"],
+    },
+    "leisure": {
+        "amenity": ["cafe", "restaurant", "cinema", "theatre", "community_centre"],
+        "leisure": ["sports_centre", "fitness_centre"],
+    },
+    "work": {"office": True, "amenity": ["coworking_space"]},
+}
 
 # §6.7 要素B: クロノトピー用の時間帯バケット。
 TIME_OF_DAY = ["morning", "daytime", "evening"]
@@ -74,4 +109,3 @@ def score_label(s: float) -> str:
 
 validate_weights(CATEGORY_WEIGHTS)
 validate_weights(QUALITY_WEIGHTS)
-

@@ -3,15 +3,16 @@
 最終更新: 2026-06-22 / 担当: Claude(Opus 4.8) 設計・指揮 ＋ codex CLI 実装
 
 ## 現在地
-**WSL へ移行完了。M0b scaffold を codex で生成し、pytest 緑・CLI 動作を確認済。** 次は M1（機能A MVP）。
-WSL(Ubuntu-22.04) に repo を clone（`/home/shin/tosi_design`）し、codex `-s workspace-write`（危険フラグ不要）で scaffold 生成成功。`python3 -m pytest -q` → 7 passed。`python -m nmincity run ...` スタブ動作確認。
+**M1（機能A MVP）完了。谷中（既定地区）で OSM 実データから S を算出し folium 地図を生成。** 次は M2（質レイヤ §6.7）。
+WSL(Ubuntu-22.04) `/home/shin/tosi_design`。venv 構築済（geo 依存 + scikit-learn 導入、`pip install -e .` 済）。`pytest` → 10 passed。
+谷中 15分walk: 起点848・S=1.0飽和（密な中心市街地のため）。5分walk: avg=0.81/良好556・要改善265・不足27 で空間勾配を確認。地図は `outputs/`（.gitignore対象）。
 
 ## マイルストーン状況
 | ID | マイルストーン | 状態 |
 |----|----------------|------|
-| M0a | 環境セットアップ（Node+codex導入, git init, push） | 🟡 ほぼ完了（codex login 待ち） |
+| M0a | 環境セットアップ（Node+codex導入, git init, push） | ✅ 完了 |
 | M0b | プロジェクトscaffold（config・空IF・README・PROGRESS） | ✅ 完了（pytest 7緑） |
-| M1 | 機能A(MVP)：到達圏＋重み合成スコアS＋基本地図 | ⬜ 未着手 |
+| M1 | 機能A(MVP)：到達圏＋重み合成スコアS＋基本地図 | ✅ 完了（谷中で実走・pytest 10緑） |
 | M2 | 質レイヤ(§6.7)：歩行環境A＋クロノトピーB＋体験指標C＋Q | ⬜ 未着手 |
 | M3 | 提案(機能B)＋感度分析＋S×Q散布＋時間帯可視化 | ⬜ 未着手 |
 | M4 | (任意) 機能C：Location-Allocation 最適配置 | ⬜ 未着手 |
@@ -23,10 +24,9 @@ WSL(Ubuntu-22.04) に repo を clone（`/home/shin/tosi_design`）し、codex `-
 - `reference/`（モレノ著書全文）は著作権配慮で `.gitignore` 除外（公開repoに含めない）。
 
 ## 次アクション（WSL 側）
-1. ✅ clone・git identity 設定・M0b scaffold 生成・pytest 緑・commit/push
-2. **M1（機能A MVP）の codex 仕様プロンプト作成** → osmnx loader + osmnx_backend(ego_graph 到達圏) + reachability a(i,c) + score S + folium 地図 + tests
-3. M1 では geo 依存（osmnx/geopandas 等）が必要。`python3.10-venv` 未導入のため venv 不可 → `pip install --user` か `sudo apt install python3.10-venv` でvenv のどちらか要判断
-4. 対象 OSM 地区名の確定（既定：小さめの東京の地区）
+1. ✅ M0b/M1 完了（scaffold・機能A MVP・pytest 緑・谷中で実走・commit/push）
+2. **M2（質レイヤ §6.7）の codex 仕様作成** → walkability(要素A: OSMタグ→区間品質→インピーダンス補正) + chronotopia a(i,c,t)(要素B: 時間帯別到達) + 体験指標(要素C) + Q(i)・S×Q 並置
+3. デモ用に既定 minutes を見直す余地あり（谷中×15分は S 飽和。5分 or やや広い地区だと勾配が出る）
 
 ## 学び / 決定
 - Windows ネイティブ codex は書込にサンドボックス全無効フラグが必須 → 不採用。**WSL で `-s workspace-write`（安全）を使う**。

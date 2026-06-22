@@ -6,5 +6,6 @@ folium
 plotly
 pandas
 numpy
+scikit-learn
 pytest
 

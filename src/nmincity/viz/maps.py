@@ -161,6 +161,77 @@ def proposal_map(
     return m
 
 
+def allocation_map(
+    selected_points: list[tuple[float, float, str]],
+    covered_points: list[tuple[float, float]],
+    unmet_points: list[tuple[float, float]],
+    place: str,
+) -> folium.Map:
+    """最適配置候補、配置で新たに被覆される起点、現状未充足起点を描画する."""
+
+    all_points = list(unmet_points) + list(covered_points)
+    all_points.extend((lat, lon) for lat, lon, _label in selected_points)
+    if all_points:
+        center_lat = sum(lat for lat, _lon in all_points) / len(all_points)
+        center_lon = sum(lon for _lat, lon in all_points) / len(all_points)
+    else:
+        center_lat, center_lon = 35.0, 139.0
+
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=15, tiles="cartodbpositron")
+
+    unmet_group = folium.FeatureGroup(name="現状未充足起点", show=True)
+    covered_set = set(covered_points)
+    for lat, lon in unmet_points:
+        if (lat, lon) in covered_set:
+            continue
+        folium.CircleMarker(
+            location=[lat, lon],
+            radius=4,
+            color="#94a3b8",
+            fill=True,
+            fill_color="#cbd5e1",
+            fill_opacity=0.46,
+            weight=1,
+            popup="現状未充足起点",
+        ).add_to(unmet_group)
+    unmet_group.add_to(m)
+
+    covered_group = folium.FeatureGroup(name="新規被覆起点", show=True)
+    for lat, lon in covered_points:
+        folium.CircleMarker(
+            location=[lat, lon],
+            radius=6,
+            color="#16a34a",
+            fill=True,
+            fill_color="#86efac",
+            fill_opacity=0.82,
+            weight=2,
+            popup="配置により新たに被覆",
+        ).add_to(covered_group)
+    covered_group.add_to(m)
+
+    selected_group = folium.FeatureGroup(name="選択配置地", show=True)
+    for lat, lon, label in selected_points:
+        folium.Marker(
+            location=[lat, lon],
+            popup=html.escape(label),
+            tooltip="選択配置地",
+            icon=folium.Icon(color="blue", icon="plus-sign"),
+        ).add_to(selected_group)
+        folium.CircleMarker(
+            location=[lat, lon],
+            radius=10,
+            color="#1d4ed8",
+            fill=False,
+            weight=3,
+        ).add_to(selected_group)
+    selected_group.add_to(m)
+
+    folium.LayerControl(collapsed=False).add_to(m)
+    m.get_root().html.add_child(folium.Element(_allocation_legend_html(place)))
+    return m
+
+
 def sq_scatter(points: list[tuple[float, float, str]], place: str, path: str) -> None:
     """起点別の ``S`` と ``Q`` を並置する散布図 PNG を保存する."""
 
@@ -255,6 +326,25 @@ def _proposal_legend_html(place: str) -> str:
         margin-right:6px;"></span>S&lt;0.5 の不足起点</div>
       <div><span style="display:inline-block; width:10px; height:10px;
         background:#2563eb; border-radius:2px; margin-right:6px;"></span>提案代表位置</div>
+    </div>
+    """
+
+
+def _allocation_legend_html(place: str) -> str:
+    return f"""
+    <div style="
+      position: fixed; bottom: 24px; left: 24px; z-index: 9999;
+      background: white; padding: 10px 12px; border: 1px solid #d1d5db;
+      border-radius: 6px; font-size: 13px; box-shadow: 0 1px 4px #0002;">
+      <div style="font-weight: 700; margin-bottom: 6px;">最適配置: {place}</div>
+      <div><span style="display:inline-block; width:10px; height:10px;
+        background:#cbd5e1; border:1px solid #94a3b8; border-radius:999px;
+        margin-right:6px;"></span>現状未充足起点</div>
+      <div><span style="display:inline-block; width:10px; height:10px;
+        background:#86efac; border:1px solid #16a34a; border-radius:999px;
+        margin-right:6px;"></span>新規被覆起点</div>
+      <div><span style="display:inline-block; width:10px; height:10px;
+        background:#2563eb; border-radius:2px; margin-right:6px;"></span>選択配置地</div>
     </div>
     """
 

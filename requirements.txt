@@ -8,4 +8,4 @@ pandas
 numpy
 scikit-learn
 pytest
-
+pulp

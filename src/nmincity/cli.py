@@ -39,6 +39,17 @@ def build_parser() -> argparse.ArgumentParser:
     compare_parser.add_argument("--top", type=int, default=10, help="提案実施後シナリオに使う上位提案件数")
     compare_parser.set_defaults(func=compare)
 
+    allocate_parser = subparsers.add_parser("allocate", help="不足カテゴリの最適配置を計算する")
+    allocate_parser.add_argument("--place", default=DEFAULT_PLACE, help="対象地区名")
+    allocate_parser.add_argument("--minutes", type=float, default=15, help="到達圏の分数")
+    allocate_parser.add_argument("--mode", choices=MODES, default="walk", help="移動手段")
+    allocate_parser.add_argument("--sample", type=int, default=None, help="評価起点のサンプル数")
+    allocate_parser.add_argument("--k", type=int, default=3, help="選択する新規/転換施設数")
+    allocate_parser.add_argument("--category", default=None, help="対象カテゴリID（未指定時は透明な既定で選択）")
+    allocate_parser.add_argument("--candidates", type=int, default=60, help="候補地サンプル数")
+    allocate_parser.add_argument("--solver", choices=("auto", "pulp", "greedy"), default="auto", help="最適化ソルバ")
+    allocate_parser.set_defaults(func=allocate)
+
     return parser
 
 
@@ -288,6 +299,91 @@ def compare(args: argparse.Namespace) -> int:
     return 0
 
 
+def allocate(args: argparse.Namespace) -> int:
+    """機能C: 重みづけ人口カバー最大化による最適配置を生成する."""
+
+    from nmincity.backend.osmnx_backend import OsmnxBackend
+    from nmincity.config import CATEGORY_NAMES, CATEGORY_WEIGHTS
+    from nmincity.core import allocation, proposals
+    from nmincity.data import loader
+    from nmincity.viz.maps import allocation_map, save_map
+
+    graph = loader.load_graph(args.place, args.mode)
+    category_nodes = loader.load_category_nodes(graph, args.place)
+    backend = OsmnxBackend(graph, category_nodes, args.mode)
+    origins = loader.make_origins(graph, args.sample)
+
+    reach_by_origin: dict[object, dict[str, bool]] = {}
+    for origin in origins:
+        reach_by_origin[origin] = backend.reachable_categories(origin, args.minutes, args.mode)
+
+    target_category = _target_category(args.category, reach_by_origin, proposals)
+    target_weight = float(CATEGORY_WEIGHTS.get(target_category, 0.0))
+    unmet = {
+        origin
+        for origin, reach in reach_by_origin.items()
+        if not bool(reach.get(target_category, False))
+    }
+    origin_gain = {origin: target_weight * 1.0 for origin in unmet}
+
+    candidate_count = args.candidates if args.candidates is not None else 60
+    candidates = loader.make_origins(graph, candidate_count)
+    candidate_cover: dict[object, set] = {}
+    for candidate in candidates:
+        # TODO: 候補数が大きい場合は到達圏計算が重くなるため、空間索引や
+        # 事前計算済み距離行列で高速化する。
+        reachable = backend.service_area(candidate, args.minutes, args.mode)
+        candidate_cover[candidate] = set(unmet) & set(reachable)
+
+    result = allocation.maximize_coverage(
+        candidate_cover,
+        origin_gain,
+        args.k,
+        solver=args.solver,
+        target_category=target_category,
+    )
+
+    before_rate = allocation.coverage_rate(reach_by_origin, target_category)
+    after_rate = allocation.coverage_rate(
+        reach_by_origin,
+        target_category,
+        covered_origins=result.covered_origins,
+    )
+
+    unmet_points = [_node_latlon(graph, origin, loader) for origin in unmet if origin in graph.nodes]
+    covered_set = set(result.covered_origins)
+    covered_points = [_node_latlon(graph, origin, loader) for origin in covered_set if origin in graph.nodes]
+    selected_points = [
+        (*_node_latlon(graph, candidate, loader), f"node={candidate}")
+        for candidate in result.selected
+        if candidate in graph.nodes
+    ]
+
+    output_path = f"outputs/{_safe_filename(args.place)}_allocation_{args.minutes:g}min_{args.mode}.html"
+    save_map(
+        allocation_map(
+            selected_points,
+            covered_points,
+            unmet_points,
+            f"{args.place} ({args.minutes:g}min, {args.mode})",
+        ),
+        output_path,
+    )
+
+    category_name = CATEGORY_NAMES.get(target_category, target_category)
+    print(f"target_category: {category_name} ({target_category})")
+    print(f"weight_w_c: {target_weight:.3f}")
+    print(f"unmet_origins: {len(unmet)}")
+    print(f"k: {args.k}")
+    print(f"solver: {args.solver} -> method={result.method}")
+    print("population: 一様近似（起点数ベース）")
+    print(f"selected_nodes: {', '.join(str(node) for node in result.selected) if result.selected else '(none)'}")
+    print(f"coverage_rate: {before_rate:.3f} -> {after_rate:.3f}")
+    print(f"total_gain: {result.total_gain:.3f}")
+    print(f"allocation_map: {output_path}")
+    return 0
+
+
 def _nearby_convertible(
     deficiencies: dict[object, list[str]],
     service_areas: dict[object, set],
@@ -315,6 +411,39 @@ def _nearby_convertible(
         if by_target:
             result[origin] = by_target
     return result
+
+
+def _target_category(
+    requested: str | None,
+    reach_by_origin: dict[object, dict[str, bool]],
+    proposals_module,
+) -> str:
+    from nmincity.config import CATEGORY_WEIGHTS
+
+    if requested:
+        return requested
+
+    deficiencies = proposals_module.find_deficiencies(reach_by_origin)
+    missing_counts = Counter(
+        category
+        for missing_categories in deficiencies.values()
+        for category in missing_categories
+    )
+    if not missing_counts:
+        return max(CATEGORY_WEIGHTS, key=lambda category: (CATEGORY_WEIGHTS[category], category))
+    return max(
+        CATEGORY_WEIGHTS,
+        key=lambda category: (
+            float(CATEGORY_WEIGHTS[category]) * missing_counts.get(category, 0),
+            float(CATEGORY_WEIGHTS[category]),
+            category,
+        ),
+    )
+
+
+def _node_latlon(graph, node, loader_module) -> tuple[float, float]:
+    lon, lat = loader_module.node_lonlat(graph, node)
+    return lat, lon
 
 
 def _summary(values: list[float]) -> tuple[float, float, float]:

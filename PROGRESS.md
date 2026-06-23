@@ -3,8 +3,9 @@
 最終更新: 2026-06-23 / 担当: Claude(Opus 4.8) 設計・指揮 ＋ codex CLI 実装
 
 ## 現在地
-**全マイルストーン（M1 機能A・M2 質レイヤ§6.7・M3 機能B＋感度分析・M4 機能C Location-Allocation）完了。** 要件の機能A/B/C と質レイヤ・感度分析・シナリオ比較が一通り実走可能。CLI 4サブコマンド `run`/`propose`/`compare`/`allocate`。
-作業ディレクトリ `/home/shint/tosi-design/tosi-design`（WSL）。venv 構築済（geo 依存 + scikit-learn + pulp、`pip install -e .` 済）。`pytest` → 45 passed。
+**全マイルストーン（M1〜M4）完了＋ArcGIS化（ArcpyBackend／.pyt）着手。** 要件の機能A/B/C・質レイヤ・感度分析・シナリオ比較が OSM で実走可能。CLI 4サブコマンド `run`/`propose`/`compare`/`allocate`。ArcGIS Pro 用に `ArcpyBackend`(arcpy.nax)＋Python Toolbox `arcgis/nmincity.pyt`(機能A診断)を追加し、コアを無改修で OSM↔ArcGIS 差し替え可能に。
+作業ディレクトリ `/home/shint/tosi-design/tosi-design`（WSL）。venv 構築済（geo 依存 + scikit-learn + pulp、`pip install -e .` 済）。`pytest` → 47 passed。
+- ArcpyBackend は arcpy を遅延 import（arcpy 無し環境でも import・テスト緑。NetworkBackend 準拠＝abstractmethods 空）。動作確認は ArcGIS Pro 3.x＋Network Analyst＋Network Dataset が必要（この環境では実行不可）。
 - M3b（感度分析・シナリオ比較）: mean_S=Σŵ_c·reach_rate[c] の線形性で透明化。`compare` で現状/重み変更後/提案実施後を並置＋plotlyチャート。
 - M4（機能C）: MCLP（pulp厳密解＋greedyフォールバック）で重みづけ人口カバー最大化。`allocate` で k 箇所配置。
 - 谷中5分walk実走: compare で baseline 0.805→提案実施後 0.903。allocate(学ぶ,k=3,pulp): 被覆率 0.700→0.993、total_gain=0.18×44=7.92。

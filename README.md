@@ -34,7 +34,7 @@ python -m nmincity allocate --place "谷中, 台東区, 東京都, 日本" --min
 ## アーキテクチャ
 
 ネットワーク計算は `NetworkBackend` 抽象に分離しています。コア（スコア・質・提案・感度・配置）はバックエンドへ依存せず、
-将来 `OsmnxBackend` から ArcGIS/arcpy ベースの `ArcpyBackend` へ差し替えられる設計です。スコアリングの純ロジックは
+`OsmnxBackend` から ArcGIS/arcpy ベースの `ArcpyBackend` へ差し替えられる設計です。スコアリングの純ロジックは
 `networkx`/`osmnx` 非依存で、単体テスト可能です。
 
 主な構成:
@@ -51,6 +51,24 @@ python -m nmincity allocate --place "谷中, 台東区, 東京都, 日本" --min
 - `src/nmincity/cli.py`: `run`/`propose`/`compare`/`allocate` サブコマンド
 
 質レイヤ・提案・最適化はいずれも調整可能な重みで透明に効く設計とし、近接性 `S` と質 `Q` は既定では合成せず並置します（要件 §6.7.1 / §11）。
+
+## ArcGIS Pro での利用
+
+ArcGIS Pro 3.x と Network Analyst エクステンション、徒歩/自転車の Travel Mode を持つ Network Dataset が必要です。`arcpy` は ArcGIS Pro 同梱の Windows 専用ライセンス製品のため、Linux や通常の Python 環境では実行できません。リポジトリの自動テストは `arcpy` 非依存部分のみを対象にしています。
+
+手順:
+
+1. ArcGIS Pro の Python 環境、または `arcpy` を利用できる conda env で、このリポジトリを editable install します。
+
+   ```bash
+   python -m pip install -e .
+   ```
+
+2. ArcGIS Pro で Python Toolbox `arcgis/nmincity.pyt` を追加します。
+3. 「近接性スコア診断 (機能A)」ツールに Network Dataset、評価起点 Feature Class、カテゴリ別施設 Feature Class、n分、移動手段、出力 Feature Class を指定して実行します。
+4. 出力 Feature Class の `S` と `label` フィールドをシンボロジで可視化します。
+
+設計上、ArcGIS 版は `ArcpyBackend` が `NetworkBackend` を実装し、カテゴリ別到達度だけを返します。近接性スコア `S` は OSM 版と同じ `nmincity.core.score.proximity_score` で計算するため、`OsmnxBackend` と `ArcpyBackend` を同一スコア計算で差し替え可能です。
 
 ## マイルストーン
 

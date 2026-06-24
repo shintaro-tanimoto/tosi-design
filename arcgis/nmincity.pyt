@@ -8,13 +8,23 @@ ArcGIS Pro の Python 環境で ``pip install -e .`` して使うことを推奨
 
 from __future__ import annotations
 
+import inspect
 import sys
 from pathlib import Path
 
 import arcpy
 
 
-_ROOT = Path(__file__).resolve().parents[1]
+def _this_file() -> Path:
+    """`.pyt` 読み込み時は ``__file__`` が未定義のことがあるため、
+    現在フレームのソースファイル名から自身のパスを解決する。"""
+    try:
+        return Path(__file__).resolve()
+    except NameError:
+        return Path(inspect.getfile(inspect.currentframe())).resolve()
+
+
+_ROOT = _this_file().parents[1]
 _SRC = _ROOT / "src"
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))

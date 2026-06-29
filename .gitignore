@@ -17,6 +17,19 @@ data/cache/
 *.graphml
 cache/
 
+# GIS データ（大容量・コミット対象外）
+mesh/
+*.gdb/
+*.shp
+*.shx
+*.dbf
+*.prj
+*.sbn
+*.sbx
+*.cpg
+*.shp.xml
+MESH*
+
 # OS / エディタ
 .DS_Store
 Thumbs.db

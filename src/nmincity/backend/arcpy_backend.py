@@ -83,19 +83,31 @@ class ArcpyBackend(NetworkBackend):
         ``origin`` は ``(lon, lat)`` タプルまたは ``arcpy.PointGeometry`` を
         受け付ける。``weight`` は抽象 IF 互換の引数で、ArcGIS 版では
         Network Dataset の Travel Mode に委ねる。
+
+        Travel Mode が Network Dataset に未定義の場合は Shape_Length を
+        impedance として距離ベースの解析にフォールバックする。
         """
 
         _ = weight
         arcpy = self._arc
         point = self._to_point(origin)
-        travel_mode = self._travel_mode(mode)
 
         solver = arcpy.nax.ServiceArea(self.network_dataset)
-        solver.travelMode = travel_mode
-        solver.timeUnits = arcpy.nax.TimeUnits.Minutes
-        solver.defaultImpedanceCutoffs = [float(minutes)]
         solver.outputType = arcpy.nax.ServiceAreaOutputType.Polygons
         solver.geometryAtOverlap = arcpy.nax.ServiceAreaOverlapGeometry.Split
+
+        try:
+            travel_mode = self._travel_mode(mode)
+            solver.travelMode = travel_mode
+            solver.timeUnits = arcpy.nax.TimeUnits.Minutes
+            solver.defaultImpedanceCutoffs = [float(minutes)]
+        except RuntimeError:
+            # Travel Mode 未設定 → Shape_Length (m) で代替
+            # 徒歩 5 km/h = 83.33 m/min、自転車 15 km/h = 250 m/min
+            _SPEED_MPM = {"walk": 5_000 / 60, "bike": 15_000 / 60}
+            speed_mpm = _SPEED_MPM.get(mode, 5_000 / 60)
+            solver.impedanceAttributeName = "Shape_Length"
+            solver.defaultImpedanceCutoffs = [float(minutes) * speed_mpm]
 
         facilities_fc = self._make_origin_fc(point)
         polygons_fc = f"in_memory/nmincity_sa_{uuid4().hex}"

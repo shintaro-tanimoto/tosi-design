@@ -30,7 +30,7 @@ if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
 
-from nmincity.config import CATEGORY_NAMES, CATEGORY_WEIGHTS, score_label  # noqa: E402
+from nmincity.config import CATEGORY_NAMES, CATEGORY_WEIGHTS, CATEGORY_OSM_TAGS, score_label  # noqa: E402
 from nmincity.core.score import proximity_score  # noqa: E402
 from nmincity.backend.arcpy_backend import ArcpyBackend  # noqa: E402
 
@@ -39,7 +39,132 @@ class Toolbox:
     def __init__(self):
         self.label = "n分都市化支援ツール"
         self.alias = "nmincity"
-        self.tools = [DiagnoseProximity]
+        self.tools = [DownloadOSMFacilities, DiagnoseProximity]
+
+
+class DownloadOSMFacilities:
+    """OSM から施設データを自動ダウンロードして Feature Class を作成する."""
+
+    label = "OSM施設データ自動取得"
+    description = "OpenStreetMap から各カテゴリの施設データを取得し、ジオデータベースに Feature Class として保存します。出力 FC を「近接性スコア診断」の各施設 FC に指定してください。"
+    canRunInBackground = False
+
+    def getParameterInfo(self):
+        place_param = arcpy.Parameter(
+            displayName="地区名 (Nominatim形式)",
+            name="place",
+            datatype="GPString",
+            parameterType="Required",
+            direction="Input",
+        )
+        place_param.value = "谷中, 台東区, 東京都, 日本"
+
+        gdb_param = arcpy.Parameter(
+            displayName="出力ジオデータベース",
+            name="out_gdb",
+            datatype="DEWorkspace",
+            parameterType="Required",
+            direction="Input",
+        )
+        gdb_param.filter.list = ["Local Database", "Remote Database"]
+
+        folder_param = arcpy.Parameter(
+            displayName="フォルダー名 (GDB 内に新規作成)",
+            name="dataset_name",
+            datatype="GPString",
+            parameterType="Required",
+            direction="Input",
+        )
+        folder_param.value = "OSM_施設"
+
+        radius_param = arcpy.Parameter(
+            displayName="フォールバック半径 (m) ※地区名がポイント認識された場合に使用",
+            name="fallback_radius_m",
+            datatype="GPDouble",
+            parameterType="Optional",
+            direction="Input",
+        )
+        radius_param.value = 1000
+
+        return [place_param, gdb_param, folder_param, radius_param]
+
+    def execute(self, parameters, messages):
+        place = parameters[0].valueAsText
+        out_gdb = parameters[1].valueAsText
+        dataset_name = parameters[2].valueAsText.strip()
+        fallback_radius_m = float(parameters[3].value or 1000)
+
+        try:
+            import osmnx as ox
+        except ImportError:
+            arcpy.AddError(
+                "osmnx がインストールされていません。"
+                " ArcGIS Pro の Python 環境で「pip install osmnx」を実行してください。"
+            )
+            return
+
+        sr = arcpy.SpatialReference(4326)
+
+        fd_path = f"{out_gdb}\\{dataset_name}"
+        if arcpy.Exists(fd_path):
+            arcpy.AddMessage(f"フォルダー '{dataset_name}' は既に存在します。既存フォルダーに追加します。")
+        else:
+            arcpy.management.CreateFeatureDataset(out_gdb, dataset_name, sr)
+            arcpy.AddMessage(f"フォルダー '{dataset_name}' を作成しました。")
+
+        created: list[str] = []
+
+        for category, tags in CATEGORY_OSM_TAGS.items():
+            cat_label = CATEGORY_NAMES.get(category, category)
+            arcpy.AddMessage(f"{cat_label} ({category}) を OSM から取得しています...")
+
+            try:
+                features = _fetch_osm_features(ox, place, tags, fallback_radius_m, arcpy)
+            except Exception as exc:
+                arcpy.AddWarning(f"  {cat_label}: OSM 取得に失敗しました ({exc})")
+                continue
+
+            if features is None or features.empty:
+                arcpy.AddWarning(f"  {cat_label}: データが見つかりませんでした。")
+                continue
+
+            geometries = features.geometry.dropna()
+            try:
+                utm_crs = geometries.estimate_utm_crs()
+                points = geometries.to_crs(utm_crs).centroid.to_crs(4326)
+            except Exception as exc:
+                arcpy.AddWarning(f"  {cat_label}: 座標変換に失敗しました ({exc})")
+                continue
+
+            coords = [(float(p.x), float(p.y)) for p in points if not p.is_empty]
+            if not coords:
+                arcpy.AddWarning(f"  {cat_label}: 有効なジオメトリがありませんでした。")
+                continue
+
+            fc_name = f"osm_{category}"
+            fc_path = f"{fd_path}\\{fc_name}"
+
+            try:
+                if arcpy.Exists(fc_path):
+                    arcpy.management.Delete(fc_path)
+                arcpy.management.CreateFeatureclass(
+                    fd_path, fc_name, "POINT", spatial_reference=sr
+                )
+                with arcpy.da.InsertCursor(fc_path, ["SHAPE@XY"]) as cursor:
+                    for xy in coords:
+                        cursor.insertRow([xy])
+
+                count = int(arcpy.management.GetCount(fc_path).getOutput(0))
+                arcpy.AddMessage(f"  → {count} 件を保存: {fc_path}")
+                created.append(fc_path)
+            except Exception as exc:
+                arcpy.AddWarning(f"  {cat_label}: Feature Class の作成に失敗しました ({exc})")
+
+        arcpy.AddMessage("")
+        arcpy.AddMessage("=== 完了 ===")
+        arcpy.AddMessage("以下の FC を「近接性スコア診断」の各施設 FC に指定してください:")
+        for path in created:
+            arcpy.AddMessage(f"  {path}")
 
 
 class DiagnoseProximity:
@@ -144,6 +269,21 @@ class DiagnoseProximity:
                 cursor.updateRow([oid, scores.get(oid), labels.get(oid, "不足")])
 
         arcpy.AddMessage("近接性スコア診断が完了しました。")
+
+
+def _fetch_osm_features(ox, place, tags, fallback_radius_m, arcpy):
+    """features_from_place を試み、ポリゴン未解決時は地点+半径にフォールバックする."""
+    try:
+        return ox.features_from_place(place, tags)
+    except Exception as exc:
+        if "Polygon" not in str(exc):
+            raise
+        arcpy.AddMessage(
+            f"  地区名がポリゴンとして認識されませんでした。"
+            f" 地点 + {fallback_radius_m:.0f}m 半径で再取得します。"
+        )
+        lat, lon = ox.geocode(place)
+        return ox.features_from_point((lat, lon), tags, dist=fallback_radius_m)
 
 
 def _ensure_field(feature_class, field_name, field_type, field_length=None):

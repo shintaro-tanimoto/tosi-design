@@ -64,7 +64,8 @@ python -m nmincity allocate --place "天王寺区, 大阪市, 大阪府, 日本"
 - `src/nmincity/core/proposals.py`: 機能B ルールベース改善提案（優先度 `w_c×影響人口`）
 - `src/nmincity/core/sensitivity.py`: 重み感度分析・シナリオ比較（`mean_S=Σŵ_c·reach_rate[c]`）
 - `src/nmincity/core/allocation.py`: 機能C Location-Allocation（MCLP、pulp 厳密解＋greedy フォールバック）
-- `src/nmincity/cli.py`: `run`/`propose`/`compare`/`allocate` サブコマンド
+- `src/nmincity/data/gdb_loader.py`: ArcGIS `.gdb` の計算済み結果を `arcpy` 非依存で読む層（スコア点群・メッシュセル復元・施設点群・人口加重到達率）
+- `src/nmincity/cli.py`: `run`/`dashboard`/`compare-places`/`propose`/`compare`/`allocate`/`viz-gdb`/`compare-gdb` サブコマンド
 
 質レイヤ・提案・最適化はいずれも調整可能な重みで透明に効く設計とし、近接性 `S` と質 `Q` は既定では合成せず並置します（要件 §6.7.1 / §11）。
 
@@ -112,6 +113,7 @@ python -m nmincity compare-gdb --gdbs tennoji.gdb sumiyoshi.gdb sakai.gdb --labe
 - M2: 質レイヤ §6.7（要素A 歩行環境の質・要素B クロノトピー・要素C 体験指標・統合 Q・時間帯可視化）
 - M3: 機能B 改善提案（`propose`）＋感度分析・シナリオ比較（`compare`）
 - M4: 機能C Location-Allocation 最適配置（`allocate`、任意機能）
+- M5: ArcGIS `.gdb` のローカル可視化（`arcpy` 非依存）— 7要素レイヤー・スコア面2種（メッシュ塗り／補間サーフェス）・複数地区比較（`viz-gdb`／`compare-gdb`）
 
 ## テスト
 

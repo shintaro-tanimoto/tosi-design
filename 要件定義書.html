@@ -247,6 +247,7 @@ Nordhavn 型の「白紙からの最適配置」は機能Cが対応する。
   <span class="step">④ 診断→転換提案→最適配置</span><span class="arrow">→</span>
   <span class="step">⑤ 可視化・シナリオ比較</span>
 </div>
+<p class="small">②③④（分析）は ArcGIS（Network Analyst）で実行し、結果を <code>.gdb</code> に保存する。⑤（可視化）は同じ <code>.gdb</code> を <strong>arcpy 非依存の Python（folium/plotly）</strong>で読み、地図・図表を反復生成できる（分析と可視化の分離。§9）。</p>
 
 <!-- 5 -->
 <h2 id="s5"><span class="num">5.</span>機能要件</h2>
@@ -431,6 +432,10 @@ Nordhavn 型の「白紙からの最適配置」は機能Cが対応する。
   <li><strong>歩きたくなる街路ヒートマップ</strong>（軸2・要素A）：街路区間ごとの質を地図上に色分け表示する。</li>
   <li><strong>質×近接の散布図</strong>：各メッシュを 近接性 S × 環境の質 Q の2軸に配置し、「近接はできるが質が低い」象限などを可視化する。</li>
   <li><strong>時間帯による街の表情</strong>（軸2・要素B/C）：朝/昼/夕で到達機能とにぎわいがどう変わるかをアニメーション/切替で表現する。</li>
+  <li><strong>7要素レイヤー分けマップ</strong>：用途カテゴリ（7要素）ごとに施設・到達度を個別レイヤー化し、<code>LayerControl</code> で要素単位にトグル表示する（中間指摘「7要素はレイヤー分けするとよい」への対応）。</li>
+  <li><strong>スコアの面表示は2種類</strong>：①<strong>メッシュ塗り</strong>（各人口メッシュセルを評価ラベル色で塗る離散表示。セル単位で値が読める）と、②<strong>補間サーフェス</strong>（格子点を線形補間した連続的で滑らかなヒートマップ）を併せて出力する。</li>
+  <li><strong>複数地区の比較</strong>：土地勘のある地区（例：大阪3区）について7要素到達率プロファイルを<strong>レーダー＋グループ棒</strong>で地区横断比較する（中間指摘「3都市ぐらいパラメータも比べる」への対応）。</li>
+  <li><strong>分析と可視化の分離</strong>：精度の要る到達圏・人口メッシュ解析は ArcGIS（Network Analyst）で行い、結果を保存した <code>.gdb</code> を <strong>arcpy 非依存の Python（geopandas＋pyogrio→folium/plotly）</strong>でローカル可視化できる。ライセンスや ArcGIS Pro の再起動なしに地図・図表を反復作成できる。</li>
 </ul>
 
 <!-- 10 -->
@@ -442,9 +447,10 @@ Nordhavn 型の「白紙からの最適配置」は機能Cが対応する。
     <tr><td>Phase 1（MVP）</td><td>機能A（カテゴリ別到達圏＋重み合成スコア＋不足可視化）＋重み調整UI</td></tr>
     <tr><td>Phase 2</td><td>機能B（ルールベース転換提案）＋感度分析</td></tr>
     <tr><td>Phase 3</td><td>機能C（Location-Allocation 最適配置）＋シナリオ比較</td></tr>
+    <tr><td>Phase 4</td><td>ArcGIS 解析結果（<code>.gdb</code>）の<strong>ローカル可視化</strong>（arcpy 非依存）：7要素レイヤー・メッシュ塗り/補間サーフェス・複数地区比較</td></tr>
   </tbody>
 </table>
-<div class="warn"><strong>注：</strong>本書は要件定義であり、ツール本体（<code>.pyt</code>）の実装・実データ解析は<strong>本段階のスコープ外</strong>とする。</div>
+<div class="warn"><strong>注：</strong>本書は要件定義だが、検証用に標準 Python プロトタイプ（osmnx/networkx/geopandas、機能A〜C＋質レイヤ）と ArcGIS Python Toolbox（<code>.pyt</code>・機能A）を別途実装済み。分析（ArcGIS）と可視化（arcpy 非依存 Python）は役割分担できる。</div>
 
 <!-- 11 -->
 <h2 id="s11"><span class="num">11.</span>留意点・論点</h2>

@@ -94,6 +94,62 @@ def reach_rate_chart(rates: Mapping[str, float], place: str, path: str) -> None:
     _write_html(fig, path)
 
 
+def places_radar_chart(profiles: Mapping[str, Mapping[str, float]], place: str, path: str) -> None:
+    """地区別の7要素到達率プロファイルをレーダーチャートで重ね描き HTML 保存する.
+
+    ``profiles`` は ``{地区名: {category: 到達率}}``。7要素の「形」の違いを
+    地区間で比較する用途。
+    """
+
+    categories = list(CATEGORY_NAMES)
+    axis_labels = [CATEGORY_NAMES[category] for category in categories]
+    fig = go.Figure()
+    for name, rates in profiles.items():
+        values = [float(rates.get(category, 0.0)) for category in categories]
+        fig.add_trace(
+            go.Scatterpolar(
+                r=values + values[:1],
+                theta=axis_labels + axis_labels[:1],
+                fill="toself",
+                name=name,
+                hovertemplate="%{theta}<br>到達率=%{r:.3f}<extra>" + name + "</extra>",
+            )
+        )
+    fig.update_layout(
+        title=f"地区別 7要素プロファイル: {place}",
+        polar={"radialaxis": {"visible": True, "range": [0, 1]}},
+        template="plotly_white",
+    )
+    _write_html(fig, path)
+
+
+def places_reach_bar_chart(profiles: Mapping[str, Mapping[str, float]], place: str, path: str) -> None:
+    """カテゴリ×地区のグループ棒グラフ（到達率）を HTML 保存する."""
+
+    categories = list(CATEGORY_NAMES)
+    axis_labels = [CATEGORY_NAMES[category] for category in categories]
+    fig = go.Figure()
+    for name, rates in profiles.items():
+        values = [float(rates.get(category, 0.0)) for category in categories]
+        fig.add_trace(
+            go.Bar(
+                x=axis_labels,
+                y=values,
+                name=name,
+                hovertemplate="%{x}<br>到達率=%{y:.3f}<extra>" + name + "</extra>",
+            )
+        )
+    fig.update_layout(
+        title=f"地区別 カテゴリ到達率: {place}",
+        barmode="group",
+        xaxis_title="カテゴリ",
+        yaxis_title="到達率",
+        yaxis_range=[0, 1],
+        template="plotly_white",
+    )
+    _write_html(fig, path)
+
+
 def _write_html(fig: go.Figure, path: str) -> None:
     output = Path(path)
     output.parent.mkdir(parents=True, exist_ok=True)

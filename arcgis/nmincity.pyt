@@ -249,9 +249,15 @@ class DiagnoseProximity:
         arcpy.management.CopyFeatures(origins_fc, out_fc)
         _ensure_field(out_fc, "S", "DOUBLE")
         _ensure_field(out_fc, "label", "TEXT", field_length=16)
+        # カテゴリ別の到達(0/1)も出力する。ローカルの可視化(compare-gdb の
+        # 7要素到達率レーダー / viz-gdb の到達率チャート)が .gdb だけで作れるようにする。
+        reach_fields = [f"reach_{category}" for category in CATEGORY_WEIGHTS]
+        for field_name in reach_fields:
+            _ensure_field(out_fc, field_name, "SHORT")
 
         scores = {}
         labels = {}
+        reaches: dict[object, dict[str, bool]] = {}
         total = int(arcpy.management.GetCount(out_fc).getOutput(0))
         arcpy.AddMessage(f"{total} 件の評価起点を診断します。")
 
@@ -261,12 +267,16 @@ class DiagnoseProximity:
                 score = proximity_score(reach)
                 scores[oid] = score
                 labels[oid] = score_label(score)
+                reaches[oid] = reach
                 if row_number == 1 or row_number % 10 == 0 or row_number == total:
                     arcpy.AddMessage(f"{row_number}/{total} 件を処理しました。")
 
-        with arcpy.da.UpdateCursor(out_fc, ["OID@", "S", "label"]) as cursor:
-            for oid, _score, _label in cursor:
-                cursor.updateRow([oid, scores.get(oid), labels.get(oid, "不足")])
+        with arcpy.da.UpdateCursor(out_fc, ["OID@", "S", "label", *reach_fields]) as cursor:
+            for row in cursor:
+                oid = row[0]
+                reach = reaches.get(oid, {})
+                reach_values = [int(bool(reach.get(category, False))) for category in CATEGORY_WEIGHTS]
+                cursor.updateRow([oid, scores.get(oid), labels.get(oid, "不足"), *reach_values])
 
         arcpy.AddMessage("近接性スコア診断が完了しました。")
 

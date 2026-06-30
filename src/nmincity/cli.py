@@ -50,6 +50,49 @@ def build_parser() -> argparse.ArgumentParser:
     allocate_parser.add_argument("--solver", choices=("auto", "pulp", "greedy"), default="auto", help="最適化ソルバ")
     allocate_parser.set_defaults(func=allocate)
 
+    dashboard_parser = subparsers.add_parser("dashboard", help="単一地区の統合ダッシュボードを生成する")
+    dashboard_parser.add_argument("--place", default=DEFAULT_PLACE, help="対象地区名")
+    dashboard_parser.add_argument("--minutes", type=float, default=15, help="到達圏の分数")
+    dashboard_parser.add_argument("--mode", choices=MODES, default="walk", help="移動手段")
+    dashboard_parser.add_argument("--sample", type=int, default=None, help="評価起点のサンプル数")
+    dashboard_parser.set_defaults(func=dashboard)
+
+    compare_places_parser = subparsers.add_parser(
+        "compare-places", help="複数地区の7要素プロファイルを比較する"
+    )
+    compare_places_parser.add_argument(
+        "--places", nargs="+", default=None, help="比較地区名（未指定時は COMPARISON_PLACES）"
+    )
+    compare_places_parser.add_argument("--minutes", type=float, default=15, help="到達圏の分数")
+    compare_places_parser.add_argument("--mode", choices=MODES, default="walk", help="移動手段")
+    compare_places_parser.add_argument("--sample", type=int, default=None, help="評価起点のサンプル数")
+    compare_places_parser.set_defaults(func=compare_places)
+
+    viz_gdb_parser = subparsers.add_parser(
+        "viz-gdb", help="ArcGIS .gdb の計算済み結果を folium で可視化する（arcpy 不要）"
+    )
+    viz_gdb_parser.add_argument("--gdb", required=True, help="入力ファイルジオデータベース(.gdb)")
+    viz_gdb_parser.add_argument("--place", default=DEFAULT_PLACE, help="対象地区名（見出し用）")
+    viz_gdb_parser.add_argument(
+        "--score-layer", default=None, help="スコアレイヤー名（既定: S 列を持つ層を自動検出）"
+    )
+    viz_gdb_parser.add_argument("--facility-prefix", default="osm_", help="施設レイヤー名の接頭辞")
+    viz_gdb_parser.set_defaults(func=viz_gdb)
+
+    compare_gdb_parser = subparsers.add_parser(
+        "compare-gdb", help="複数の ArcGIS .gdb を横断して7要素到達率を比較する（arcpy 不要）"
+    )
+    compare_gdb_parser.add_argument(
+        "--gdbs", nargs="+", required=True, help="比較する .gdb のパス（2つ以上）"
+    )
+    compare_gdb_parser.add_argument(
+        "--labels", nargs="+", default=None, help="各 .gdb の表示ラベル（既定: ファイル名）"
+    )
+    compare_gdb_parser.add_argument(
+        "--score-layer", default=None, help="スコアレイヤー名（既定: 各 .gdb で自動検出）"
+    )
+    compare_gdb_parser.set_defaults(func=compare_gdb)
+
     return parser
 
 
@@ -61,7 +104,16 @@ def run(args: argparse.Namespace) -> int:
     from nmincity.core import chronotopia, experiential, walkability
     from nmincity.core.score import environment_quality, proximity_score
     from nmincity.data import loader
-    from nmincity.viz.maps import save_map, score_map, sq_scatter, time_of_day_map, walkability_map
+    from nmincity.viz.maps import (
+        category_layer_points,
+        category_layers_map,
+        save_map,
+        score_heatmap,
+        score_map,
+        sq_scatter,
+        time_of_day_map,
+        walkability_map,
+    )
 
     graph = loader.load_graph(args.place, args.mode)
     category_nodes = loader.load_category_nodes(graph, args.place)
@@ -75,6 +127,8 @@ def run(args: argparse.Namespace) -> int:
     qualities: list[float] = []
     scores_by_bucket: dict[str, list[float]] = {bucket: [] for bucket in TIME_OF_DAY}
     points_by_bucket: dict[str, list[tuple[float, float, float]]] = {bucket: [] for bucket in TIME_OF_DAY}
+    reach_by_origin: dict[object, dict[str, bool]] = {}
+    latlon_by_origin: dict[object, tuple[float, float]] = {}
     labels: Counter[str] = Counter()
     origins = loader.make_origins(graph, args.sample)
 
@@ -83,6 +137,8 @@ def run(args: argparse.Namespace) -> int:
         reach = backend.reachable_categories(origin, args.minutes, args.mode, weight=weight)
         score = proximity_score(reach)
         lon, lat = loader.node_lonlat(graph, origin)
+        reach_by_origin[origin] = reach
+        latlon_by_origin[origin] = (lat, lon)
         if args.quality:
             reachable = backend.service_area(origin, args.minutes, args.mode, weight=weight)
             timed_scores = {
@@ -112,9 +168,16 @@ def run(args: argparse.Namespace) -> int:
         scores.append(score)
         labels[score_label(score)] += 1
 
-    m = score_map(points, f"{args.place} ({args.minutes:g}min, {args.mode})")
+    title = f"{args.place} ({args.minutes:g}min, {args.mode})"
+    m = score_map(points, title)
     output_path = f"outputs/{_safe_filename(args.place)}_S_{args.minutes:g}min_{args.mode}.html"
     save_map(m, output_path)
+
+    category_points = category_layer_points(reach_by_origin, latlon_by_origin)
+    layers_path = f"outputs/{_safe_filename(args.place)}_layers_{args.minutes:g}min_{args.mode}.html"
+    heatmap_path = f"outputs/{_safe_filename(args.place)}_heatmap_{args.minutes:g}min_{args.mode}.html"
+    save_map(category_layers_map(category_points, title), layers_path)
+    save_map(score_heatmap(points, category_points, title), heatmap_path)
 
     if scores:
         average = sum(scores) / len(scores)
@@ -138,6 +201,8 @@ def run(args: argparse.Namespace) -> int:
         f"良好={labels['良好']}, 要改善={labels['要改善']}, 不足={labels['不足']}"
     )
     print(f"map: {output_path}")
+    print(f"category_layers_map: {layers_path}")
+    print(f"score_heatmap: {heatmap_path}")
     if args.quality:
         walk_path = f"outputs/{_safe_filename(args.place)}_walk_{args.minutes:g}min_{args.mode}.html"
         scatter_path = f"outputs/{_safe_filename(args.place)}_SxQ_{args.minutes:g}min_{args.mode}.png"
@@ -382,6 +447,355 @@ def allocate(args: argparse.Namespace) -> int:
     print(f"total_gain: {result.total_gain:.3f}")
     print(f"allocation_map: {output_path}")
     return 0
+
+
+def dashboard(args: argparse.Namespace) -> int:
+    """単一地区の統合ダッシュボード（地図＋チャート＋重み根拠）を生成する."""
+
+    import os
+
+    from nmincity.backend.osmnx_backend import OsmnxBackend
+    from nmincity.config import CATEGORY_NAMES, CATEGORY_WEIGHTS, WEIGHT_RATIONALE, score_label
+    from nmincity.core import sensitivity
+    from nmincity.core.score import proximity_score
+    from nmincity.data import loader
+    from nmincity.viz.charts import reach_rate_chart
+    from nmincity.viz.dashboard import build_dashboard
+    from nmincity.viz.maps import (
+        category_layer_points,
+        category_layers_map,
+        save_map,
+        score_map,
+        walkability_map,
+    )
+
+    graph = loader.load_graph(args.place, args.mode)
+    category_nodes = loader.load_category_nodes(graph, args.place)
+    loader.annotate_walkability(graph, category_nodes)
+    backend = OsmnxBackend(graph, category_nodes, args.mode)
+    origins = loader.make_origins(graph, args.sample)
+
+    title = f"{args.place} ({args.minutes:g}min, {args.mode})"
+    points: list[tuple[float, float, float]] = []
+    scores: list[float] = []
+    reach_by_origin: dict[object, dict[str, bool]] = {}
+    latlon_by_origin: dict[object, tuple[float, float]] = {}
+    labels: Counter[str] = Counter()
+    for origin in origins:
+        reach = backend.reachable_categories(origin, args.minutes, args.mode, weight="eff_travel_time")
+        score = proximity_score(reach)
+        lon, lat = loader.node_lonlat(graph, origin)
+        reach_by_origin[origin] = reach
+        latlon_by_origin[origin] = (lat, lon)
+        points.append((lat, lon, score))
+        scores.append(score)
+        labels[score_label(score)] += 1
+
+    base = f"outputs/{_safe_filename(args.place)}_dash_{args.minutes:g}min_{args.mode}"
+    s_path = f"{base}_S.html"
+    q_path = f"{base}_Q.html"
+    layers_path = f"{base}_layers.html"
+    rates_path = f"{base}_reach_rates.html"
+    save_map(score_map(points, title), s_path)
+    save_map(walkability_map(loader.edge_quality_lines(graph), title), q_path)
+    save_map(category_layers_map(category_layer_points(reach_by_origin, latlon_by_origin), title), layers_path)
+    reach_rate_chart(sensitivity.reach_rate(reach_by_origin), title, rates_path)
+
+    average, minimum, maximum = _summary(scores)
+    summary = [
+        ("起点数", str(len(origins))),
+        ("S 平均", f"{average:.3f}"),
+        ("S 最小/最大", f"{minimum:.3f} / {maximum:.3f}"),
+        ("良好/要改善/不足", f"{labels['良好']}/{labels['要改善']}/{labels['不足']}"),
+    ]
+    weight_rows = [
+        {
+            "name": CATEGORY_NAMES.get(category, category),
+            "weight": f"{CATEGORY_WEIGHTS[category]:.2f}",
+            "rationale": WEIGHT_RATIONALE.get(category, {}).get("rationale", ""),
+            "reference": WEIGHT_RATIONALE.get(category, {}).get("reference", ""),
+        }
+        for category in CATEGORY_WEIGHTS
+    ]
+    panels = [
+        ("近接性 S（地図）", os.path.basename(s_path)),
+        ("環境の質 Q（歩行環境）", os.path.basename(q_path)),
+        ("7要素レイヤー", os.path.basename(layers_path)),
+        ("カテゴリ別到達率", os.path.basename(rates_path)),
+    ]
+
+    output_path = f"{base}.html"
+    build_dashboard(
+        place=args.place,
+        panels=panels,
+        weight_rows=weight_rows,
+        summary=summary,
+        path=output_path,
+        subtitle="S（近接性）と Q（環境の質）は合成せず並置して診断する（要件 §6.7.1）。",
+    )
+
+    print(f"place: {args.place}")
+    print(f"origins: {len(origins)}")
+    print(f"S: avg={average:.3f}, min={minimum:.3f}, max={maximum:.3f}")
+    print(f"dashboard: {output_path}")
+    return 0
+
+
+def compare_places(args: argparse.Namespace) -> int:
+    """複数地区の7要素到達率プロファイルを比較する."""
+
+    import os
+
+    from nmincity.backend.osmnx_backend import OsmnxBackend
+    from nmincity.config import CATEGORY_WEIGHTS, COMPARISON_PLACES
+    from nmincity.core import sensitivity
+    from nmincity.core.score import proximity_score
+    from nmincity.data import loader
+    from nmincity.viz.charts import places_radar_chart, places_reach_bar_chart
+    from nmincity.viz.dashboard import build_dashboard
+
+    places = args.places if args.places else list(COMPARISON_PLACES)
+    profiles: dict[str, dict[str, float]] = {}
+    mean_s_by_place: dict[str, float] = {}
+    origins_by_place: dict[str, int] = {}
+
+    for place in places:
+        graph = loader.load_graph(place, args.mode)
+        category_nodes = loader.load_category_nodes(graph, place)
+        backend = OsmnxBackend(graph, category_nodes, args.mode)
+        origins = loader.make_origins(graph, args.sample)
+        reach_by_origin = {
+            origin: backend.reachable_categories(origin, args.minutes, args.mode)
+            for origin in origins
+        }
+        rates = sensitivity.reach_rate(reach_by_origin)
+        scores = [proximity_score(reach) for reach in reach_by_origin.values()]
+        label = _place_label(place)
+        profiles[label] = rates
+        mean_s_by_place[label] = _summary(scores)[0]
+        origins_by_place[label] = len(origins)
+
+    title = f"{len(places)}地区比較 ({args.minutes:g}min, {args.mode})"
+    base = f"outputs/compare_places_{args.minutes:g}min_{args.mode}"
+    radar_path = f"{base}_radar.html"
+    bar_path = f"{base}_bar.html"
+    places_radar_chart(profiles, title, radar_path)
+    places_reach_bar_chart(profiles, title, bar_path)
+
+    summary = [(label, f"mean S={mean_s_by_place[label]:.3f}") for label in profiles]
+    panels = [
+        ("7要素プロファイル（レーダー）", os.path.basename(radar_path)),
+        ("カテゴリ別到達率（グループ棒）", os.path.basename(bar_path)),
+    ]
+    weight_rows = _comparison_weight_rows(profiles, mean_s_by_place)
+
+    output_path = f"{base}.html"
+    build_dashboard(
+        place=title,
+        panels=panels,
+        weight_rows=weight_rows,
+        summary=summary,
+        path=output_path,
+        subtitle="同一指標を地区横断で比較。レーダーは7要素の到達率プロファイルの「形」を示す。",
+    )
+
+    print("places: " + ", ".join(profiles))
+    for label in profiles:
+        print(f"{label}\torigins={origins_by_place[label]}\tmean_S={mean_s_by_place[label]:.3f}")
+    print(f"radar_chart: {radar_path}")
+    print(f"bar_chart: {bar_path}")
+    print(f"dashboard: {output_path}")
+    _ = CATEGORY_WEIGHTS  # 重み参照（将来の重み別比較拡張用）
+    return 0
+
+
+def viz_gdb(args: argparse.Namespace) -> int:
+    """ArcGIS .gdb の計算済み結果（S / 施設）を folium で可視化する（arcpy 非依存）."""
+
+    import os
+
+    from nmincity.config import CATEGORY_NAMES, CATEGORY_WEIGHTS, WEIGHT_RATIONALE
+    from nmincity.data import gdb_loader
+    from nmincity.viz.charts import reach_rate_chart
+    from nmincity.viz.dashboard import build_dashboard
+    from nmincity.viz.maps import (
+        facility_layers_map,
+        save_map,
+        score_mesh_map,
+        score_map,
+        score_surface_map,
+    )
+
+    score_layers = (
+        [args.score_layer] if args.score_layer else gdb_loader.list_score_layers(args.gdb)
+    )
+    if not score_layers:
+        print(f"スコアレイヤー（S 列）が見つかりません: {args.gdb}")
+        return 1
+
+    safe_place = _safe_filename(args.place)
+    facilities = gdb_loader.load_facility_points(args.gdb, prefix=args.facility_prefix)
+    facilities_path = f"outputs/{safe_place}_gdb_facilities.html"
+    save_map(facility_layers_map(facilities, args.place), facilities_path)
+
+    primary_panels: list[tuple[str, str]] = []
+    for index, layer in enumerate(score_layers):
+        points = gdb_loader.load_score_points(args.gdb, layer)
+        cells = gdb_loader.load_score_mesh(args.gdb, layer)
+        title = f"{args.place} [{layer}]"
+        slug = _safe_filename(layer)
+        s_path = f"outputs/{safe_place}_gdb_{slug}_S.html"
+        mesh_path = f"outputs/{safe_place}_gdb_{slug}_mesh.html"
+        surface_path = f"outputs/{safe_place}_gdb_{slug}_surface.html"
+        save_map(score_map(points, title), s_path)
+        save_map(score_mesh_map(cells, title), mesh_path)
+        save_map(score_surface_map(points, title), surface_path)
+        average, minimum, maximum = _summary([score for _lat, _lon, score in points])
+        print(f"layer={layer}\torigins={len(points)}\tS avg={average:.3f} min={minimum:.3f} max={maximum:.3f}")
+        if index == 0:
+            primary_panels = [
+                ("近接性 S（メッシュ塗り）", os.path.basename(mesh_path)),
+                ("近接性 S（滑らかな面）", os.path.basename(surface_path)),
+                ("近接性 S（中心点）", os.path.basename(s_path)),
+            ]
+
+    primary_layer = score_layers[0]
+    summary_stats = gdb_loader.load_score_summary(args.gdb, primary_layer)
+    labels = summary_stats["labels"]
+    summary = [
+        ("起点数", str(summary_stats["origins"])),
+        ("mean S" + ("（人口加重）" if summary_stats["pop_weighted"] else ""), f"{summary_stats['mean_s']:.3f}"),
+        ("良好/要改善/不足", f"{labels['良好']}/{labels['要改善']}/{labels['不足']}"),
+        ("施設総数", str(sum(len(points) for points in facilities.values()))),
+    ]
+
+    panels = list(primary_panels)
+    profile = gdb_loader.load_reach_profile(args.gdb, primary_layer)
+    if profile is not None:
+        rates_path = f"outputs/{safe_place}_gdb_reach_rates.html"
+        reach_rate_chart(profile, args.place, rates_path)
+        panels.append(("カテゴリ別到達率", os.path.basename(rates_path)))
+    else:
+        print(f"注: {primary_layer} に reach_<category> 列が無いため到達率チャートは省略しました。")
+    panels.append(("7要素 施設分布", os.path.basename(facilities_path)))
+
+    weight_rows = [
+        {
+            "name": CATEGORY_NAMES.get(category, category),
+            "weight": f"{CATEGORY_WEIGHTS[category]:.2f}",
+            "rationale": WEIGHT_RATIONALE.get(category, {}).get("rationale", ""),
+            "reference": WEIGHT_RATIONALE.get(category, {}).get("reference", ""),
+        }
+        for category in CATEGORY_WEIGHTS
+    ]
+    output_path = f"outputs/{safe_place}_gdb_dashboard.html"
+    build_dashboard(
+        place=args.place,
+        panels=panels,
+        weight_rows=weight_rows,
+        summary=summary,
+        path=output_path,
+        subtitle="ArcGIS(.gdb) の計算済み結果を arcpy 不要で可視化（plan.md M5）。",
+    )
+    print(f"facilities: {facilities_path}")
+    print(f"dashboard: {output_path}")
+    return 0
+
+
+def compare_gdb(args: argparse.Namespace) -> int:
+    """複数の ArcGIS .gdb を横断して7要素到達率プロファイルを比較する（arcpy 非依存）."""
+
+    import os
+    from pathlib import Path
+
+    from nmincity.data import gdb_loader
+    from nmincity.viz.charts import places_radar_chart, places_reach_bar_chart
+    from nmincity.viz.dashboard import build_dashboard
+
+    labels = args.labels if args.labels else [Path(gdb).stem for gdb in args.gdbs]
+    if len(labels) != len(args.gdbs):
+        print("--labels の数は --gdbs の数と一致させてください。")
+        return 1
+
+    profiles: dict[str, dict[str, float]] = {}
+    mean_s_by_label: dict[str, float] = {}
+    for gdb, label in zip(args.gdbs, labels):
+        score_layers = (
+            [args.score_layer] if args.score_layer else gdb_loader.list_score_layers(gdb)
+        )
+        if not score_layers:
+            print(f"スコアレイヤーが見つかりません（スキップ）: {gdb}")
+            continue
+        layer = score_layers[0]
+        summary_stats = gdb_loader.load_score_summary(gdb, layer)
+        mean_s_by_label[label] = float(summary_stats["mean_s"])
+        profile = gdb_loader.load_reach_profile(gdb, layer)
+        if profile is None:
+            print(f"注: {label} ({layer}) に reach_<category> 列が無いためレーダーから除外しました。")
+            continue
+        profiles[label] = profile
+        print(f"{label}\tlayer={layer}\torigins={summary_stats['origins']}\tmean_S={summary_stats['mean_s']:.3f}")
+
+    if not mean_s_by_label:
+        print("比較可能な .gdb がありませんでした。")
+        return 1
+
+    title = f"{len(mean_s_by_label)}地区比較 (.gdb)"
+    panels: list[tuple[str, str]] = []
+    if profiles:
+        radar_path = "outputs/compare_gdb_radar.html"
+        bar_path = "outputs/compare_gdb_bar.html"
+        places_radar_chart(profiles, title, radar_path)
+        places_reach_bar_chart(profiles, title, bar_path)
+        panels = [
+            ("7要素プロファイル（レーダー）", os.path.basename(radar_path)),
+            ("カテゴリ別到達率（グループ棒）", os.path.basename(bar_path)),
+        ]
+        print(f"radar_chart: {radar_path}")
+        print(f"bar_chart: {bar_path}")
+    else:
+        print("注: どの .gdb にも reach_<category> 列が無いため、mean S のみの比較になります。")
+
+    summary = [(label, f"mean S={mean_s_by_label[label]:.3f}") for label in mean_s_by_label]
+    weight_rows = _comparison_weight_rows(profiles, {label: mean_s_by_label[label] for label in profiles})
+
+    output_path = "outputs/compare_gdb_dashboard.html"
+    build_dashboard(
+        place=title,
+        panels=panels,
+        weight_rows=weight_rows,
+        summary=summary,
+        path=output_path,
+        subtitle="ArcGIS(.gdb) の計算済み結果を地区横断で比較。レーダーは7要素到達率の「形」を示す。",
+    )
+    print(f"dashboard: {output_path}")
+    return 0
+
+
+def _place_label(place: str) -> str:
+    """地区名の先頭トークンを比較ラベルにする（例: '住吉区, 大阪市, ...' -> '住吉区'）."""
+
+    return place.split(",")[0].strip() or place
+
+
+def _comparison_weight_rows(
+    profiles: dict[str, dict[str, float]],
+    mean_s_by_place: dict[str, float],
+) -> list[dict[str, object]]:
+    from nmincity.config import CATEGORY_NAMES
+
+    rows: list[dict[str, object]] = []
+    for label, rates in profiles.items():
+        weakest = min(CATEGORY_NAMES, key=lambda category: rates.get(category, 0.0))
+        rows.append(
+            {
+                "name": label,
+                "weight": f"{mean_s_by_place[label]:.3f}",
+                "rationale": f"最も弱い要素: {CATEGORY_NAMES.get(weakest, weakest)}（到達率 {rates.get(weakest, 0.0):.2f}）",
+                "reference": "",
+            }
+        )
+    return rows
 
 
 def _nearby_convertible(

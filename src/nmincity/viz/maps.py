@@ -3,19 +3,36 @@
 from __future__ import annotations
 
 from pathlib import Path
+import base64
 import html
 import struct
 import zlib
 
 import folium
+from folium.plugins import HeatMap
 
-from nmincity.config import score_label
+from nmincity.config import CATEGORY_NAMES, score_label
 
 
 LABEL_COLORS = {
     "良好": "#15803d",
     "要改善": "#f97316",
     "不足": "#dc2626",
+}
+
+# 7要素レイヤー: 到達=緑 / 未到達=赤。
+REACH_COLOR = "#15803d"
+UNREACH_COLOR = "#dc2626"
+
+# 施設分布マップ用: 7要素をカテゴリ別に色分けするパレット（config のキー順）。
+CATEGORY_COLORS = {
+    "education": "#2563eb",
+    "nature": "#15803d",
+    "goods": "#f97316",
+    "health": "#dc2626",
+    "transit": "#7c3aed",
+    "leisure": "#db2777",
+    "work": "#0891b2",
 }
 
 
@@ -54,6 +71,261 @@ def save_map(m: folium.Map, path: str) -> None:
     output = Path(path)
     output.parent.mkdir(parents=True, exist_ok=True)
     m.save(str(output))
+
+
+def category_layer_points(
+    reach_by_origin: dict[object, dict[str, bool]],
+    latlon_by_origin: dict[object, tuple[float, float]],
+) -> dict[str, list[tuple[float, float, bool]]]:
+    """起点別カテゴリ到達度を、カテゴリ別の ``(lat, lon, reachable)`` 列に整形する.
+
+    folium 非依存の純データ整形ヘルパ（テスト対象）。``CATEGORY_NAMES`` の
+    全7カテゴリを必ずキーに持ち、座標の取れない起点はスキップする。
+    """
+
+    result: dict[str, list[tuple[float, float, bool]]] = {category: [] for category in CATEGORY_NAMES}
+    for origin, reach in reach_by_origin.items():
+        latlon = latlon_by_origin.get(origin)
+        if latlon is None:
+            continue
+        lat, lon = latlon
+        for category in CATEGORY_NAMES:
+            reachable = bool(reach.get(category, False))
+            result[category].append((lat, lon, reachable))
+    return result
+
+
+def category_layers_map(
+    category_points: dict[str, list[tuple[float, float, bool]]],
+    place: str,
+) -> folium.Map:
+    """7要素（用途カテゴリ）をレイヤー分けした地図を返す.
+
+    カテゴリごとに ``FeatureGroup`` を作り、到達=緑/未到達=赤で起点を描画する。
+    ``LayerControl`` で各要素をトグルできる（先頭カテゴリのみ初期表示）。
+    """
+
+    all_points = [
+        (lat, lon)
+        for points in category_points.values()
+        for lat, lon, _reachable in points
+    ]
+    if all_points:
+        center_lat = sum(lat for lat, _lon in all_points) / len(all_points)
+        center_lon = sum(lon for _lat, lon in all_points) / len(all_points)
+    else:
+        center_lat, center_lon = 34.65, 135.51
+
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=15, tiles="cartodbpositron")
+
+    first = True
+    for category, points in category_points.items():
+        name = CATEGORY_NAMES.get(category, category)
+        group = folium.FeatureGroup(name=name, show=first)
+        for lat, lon, reachable in points:
+            color = REACH_COLOR if reachable else UNREACH_COLOR
+            folium.CircleMarker(
+                location=[lat, lon],
+                radius=4,
+                color=color,
+                fill=True,
+                fill_color=color,
+                fill_opacity=0.72,
+                weight=1,
+                popup=f"{name}: {'到達' if reachable else '未到達'}",
+            ).add_to(group)
+        group.add_to(m)
+        first = False
+
+    folium.LayerControl(collapsed=False).add_to(m)
+    m.get_root().html.add_child(folium.Element(_category_legend_html(place)))
+    return m
+
+
+def facility_layers_map(
+    facilities: dict[str, list[tuple[float, float]]],
+    place: str,
+) -> folium.Map:
+    """7要素の施設分布をカテゴリ別レイヤーに分けて描画した地図を返す.
+
+    ``category_layers_map`` の ``FeatureGroup``＋``LayerControl`` パターンを踏襲し、
+    入力 ``{category: [(lat, lon), ...]}`` を ``CATEGORY_COLORS`` で色分けする。
+    ArcGIS .gdb の ``osm_<category>`` 施設点群（到達/未到達の区別なし）向け。
+    先頭カテゴリのみ初期表示。
+    """
+
+    all_points = [point for points in facilities.values() for point in points]
+    if all_points:
+        center_lat = sum(lat for lat, _lon in all_points) / len(all_points)
+        center_lon = sum(lon for _lat, lon in all_points) / len(all_points)
+    else:
+        center_lat, center_lon = 34.65, 135.51
+
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=15, tiles="cartodbpositron")
+
+    first = True
+    for category, points in facilities.items():
+        name = CATEGORY_NAMES.get(category, category)
+        color = CATEGORY_COLORS.get(category, "#6b7280")
+        group = folium.FeatureGroup(name=f"{name} ({len(points)})", show=first)
+        for lat, lon in points:
+            folium.CircleMarker(
+                location=[lat, lon],
+                radius=4,
+                color=color,
+                fill=True,
+                fill_color=color,
+                fill_opacity=0.72,
+                weight=1,
+                popup=name,
+            ).add_to(group)
+        group.add_to(m)
+        first = False
+
+    folium.LayerControl(collapsed=False).add_to(m)
+    m.get_root().html.add_child(folium.Element(_facility_legend_html(place)))
+    return m
+
+
+def score_heatmap(
+    points: list[tuple[float, float, float]],
+    category_points: dict[str, list[tuple[float, float, bool]]] | None,
+    place: str,
+) -> folium.Map:
+    """近接性 ``S`` を連続ヒートマップで表示する地図を返す.
+
+    任意で ``category_points`` を渡すと、各カテゴリの未到達密度ヒートを
+    トグル可能なレイヤーとして追加する（不足の集中が面で読める）。
+    """
+
+    if points:
+        center_lat = sum(lat for lat, _lon, _score in points) / len(points)
+        center_lon = sum(lon for _lat, lon, _score in points) / len(points)
+    else:
+        center_lat, center_lon = 34.65, 135.51
+
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=15, tiles="cartodbpositron")
+
+    s_layer = folium.FeatureGroup(name="S 近接性ヒート", show=True)
+    HeatMap(
+        [[lat, lon, max(0.0, min(1.0, score))] for lat, lon, score in points],
+        radius=18,
+        blur=22,
+        min_opacity=0.3,
+    ).add_to(s_layer)
+    s_layer.add_to(m)
+
+    for category, cat_points in (category_points or {}).items():
+        name = CATEGORY_NAMES.get(category, category)
+        deficit = [[lat, lon, 1.0] for lat, lon, reachable in cat_points if not reachable]
+        if not deficit:
+            continue
+        layer = folium.FeatureGroup(name=f"未到達: {name}", show=False)
+        HeatMap(deficit, radius=18, blur=22, min_opacity=0.3).add_to(layer)
+        layer.add_to(m)
+
+    folium.LayerControl(collapsed=False).add_to(m)
+    m.get_root().html.add_child(folium.Element(_heatmap_legend_html(place)))
+    return m
+
+
+def score_mesh_map(
+    cells: list[tuple[list[tuple[float, float]], float, str]],
+    place: str,
+) -> folium.Map:
+    """メッシュセルを評価ラベル色で塗り分けた地図を返す（離散コロプレス）.
+
+    ``cells`` は ``(セル外周 [(lat, lon), ...], S, label)`` の列。各セルを
+    ``LABEL_COLORS``（良好/要改善/不足）で塗る。中心点ではなく面で評価が読める。
+    """
+
+    all_points = [point for ring, _score, _label in cells for point in ring]
+    if all_points:
+        center_lat = sum(lat for lat, _lon in all_points) / len(all_points)
+        center_lon = sum(lon for _lat, lon in all_points) / len(all_points)
+    else:
+        center_lat, center_lon = 34.65, 135.51
+
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=15, tiles="cartodbpositron")
+    for ring, score, label in cells:
+        color = LABEL_COLORS.get(label or score_label(score), "#6b7280")
+        folium.Polygon(
+            locations=ring,
+            color=color,
+            weight=0.5,
+            fill=True,
+            fill_color=color,
+            fill_opacity=0.62,
+            popup=f"S={score:.3f} / {label}",
+        ).add_to(m)
+
+    m.get_root().html.add_child(folium.Element(_legend_html(f"メッシュ評価: {place}")))
+    return m
+
+
+def score_surface_map(
+    points: list[tuple[float, float, float]],
+    place: str,
+    resolution: int = 240,
+) -> folium.Map:
+    """格子点 ``(lat, lon, S)`` を補間した滑らかな連続サーフェス地図を返す.
+
+    ``scipy.interpolate.griddata`` で線形補間し、凸包外（データ無し）は透過する。
+    赤(低)→橙→緑(高)のグラデーションを RGBA-PNG にして ``ImageOverlay`` で重ねる。
+    """
+
+    if not points:
+        return folium.Map(location=[34.65, 135.51], zoom_start=15, tiles="cartodbpositron")
+
+    import numpy as np
+    from scipy.interpolate import griddata
+
+    lats = np.array([lat for lat, _lon, _s in points], dtype=float)
+    lons = np.array([lon for _lat, lon, _s in points], dtype=float)
+    vals = np.array([max(0.0, min(1.0, s)) for _lat, _lon, s in points], dtype=float)
+
+    lat_min, lat_max = float(lats.min()), float(lats.max())
+    lon_min, lon_max = float(lons.min()), float(lons.max())
+    pad_lat = (lat_max - lat_min) * 0.02 or 1e-4
+    pad_lon = (lon_max - lon_min) * 0.02 or 1e-4
+    lat_min -= pad_lat; lat_max += pad_lat
+    lon_min -= pad_lon; lon_max += pad_lon
+
+    grid_lon = np.linspace(lon_min, lon_max, resolution)
+    grid_lat = np.linspace(lat_max, lat_min, resolution)  # 行0を北端にする
+    mesh_lon, mesh_lat = np.meshgrid(grid_lon, grid_lat)
+    surface = griddata((lons, lats), vals, (mesh_lon, mesh_lat), method="linear")
+
+    pixels = bytearray(resolution * resolution * 4)
+    for row in range(resolution):
+        for col in range(resolution):
+            value = surface[row, col]
+            idx = (row * resolution + col) * 4
+            if value != value:  # NaN（データ範囲外）→ 透過
+                continue
+            red, green, blue = _score_color_rgb(float(value))
+            pixels[idx] = red
+            pixels[idx + 1] = green
+            pixels[idx + 2] = blue
+            pixels[idx + 3] = 180
+    data_uri = "data:image/png;base64," + base64.b64encode(
+        _encode_png_rgba(bytes(pixels), resolution, resolution)
+    ).decode("ascii")
+
+    m = folium.Map(
+        location=[(lat_min + lat_max) / 2, (lon_min + lon_max) / 2],
+        zoom_start=15,
+        tiles="cartodbpositron",
+    )
+    folium.raster_layers.ImageOverlay(
+        image=data_uri,
+        bounds=[[lat_min, lon_min], [lat_max, lon_max]],
+        opacity=0.85,
+        interactive=False,
+        zindex=1,
+    ).add_to(m)
+    m.get_root().html.add_child(folium.Element(_surface_legend_html(place)))
+    return m
 
 
 def walkability_map(lines: list[tuple[list[tuple[float, float]], float]], place: str) -> folium.Map:
@@ -289,6 +561,53 @@ def _legend_html(place: str) -> str:
     """
 
 
+def _category_legend_html(place: str) -> str:
+    return f"""
+    <div style="
+      position: fixed; bottom: 24px; left: 24px; z-index: 9999;
+      background: white; padding: 10px 12px; border: 1px solid #d1d5db;
+      border-radius: 6px; font-size: 13px; box-shadow: 0 1px 4px #0002;">
+      <div style="font-weight: 700; margin-bottom: 6px;">7要素レイヤー: {place}</div>
+      <div><span style="display:inline-block; width:10px; height:10px;
+        background:{REACH_COLOR}; border-radius:999px; margin-right:6px;"></span>到達</div>
+      <div><span style="display:inline-block; width:10px; height:10px;
+        background:{UNREACH_COLOR}; border-radius:999px; margin-right:6px;"></span>未到達</div>
+      <div style="margin-top:4px; color:#6b7280;">右上のレイヤー操作で要素を切替</div>
+    </div>
+    """
+
+
+def _facility_legend_html(place: str) -> str:
+    rows = "".join(
+        f'<div><span style="display:inline-block; width:10px; height:10px;'
+        f' background:{CATEGORY_COLORS.get(category, "#6b7280")}; border-radius:999px;'
+        f' margin-right:6px;"></span>{CATEGORY_NAMES.get(category, category)}</div>'
+        for category in CATEGORY_COLORS
+    )
+    return f"""
+    <div style="
+      position: fixed; bottom: 24px; left: 24px; z-index: 9999;
+      background: white; padding: 10px 12px; border: 1px solid #d1d5db;
+      border-radius: 6px; font-size: 13px; box-shadow: 0 1px 4px #0002;">
+      <div style="font-weight: 700; margin-bottom: 6px;">7要素 施設分布: {place}</div>
+      {rows}
+      <div style="margin-top:4px; color:#6b7280;">右上のレイヤー操作で要素を切替</div>
+    </div>
+    """
+
+
+def _heatmap_legend_html(place: str) -> str:
+    return f"""
+    <div style="
+      position: fixed; bottom: 24px; left: 24px; z-index: 9999;
+      background: white; padding: 10px 12px; border: 1px solid #d1d5db;
+      border-radius: 6px; font-size: 13px; box-shadow: 0 1px 4px #0002;">
+      <div style="font-weight: 700; margin-bottom: 6px;">近接性ヒートマップ: {place}</div>
+      <div style="color:#6b7280;">S が高いほど密な面。未到達レイヤーは不足の集中を示す。</div>
+    </div>
+    """
+
+
 def _quality_color(quality: float) -> str:
     q = max(0.0, min(1.0, float(quality)))
     red = int(220 + (21 - 220) * q)
@@ -426,3 +745,52 @@ def _png_chunk(kind: bytes, data: bytes) -> bytes:
 def _hex_to_rgb(value: str) -> tuple[int, int, int]:
     hex_value = value.lstrip("#")
     return int(hex_value[0:2], 16), int(hex_value[2:4], 16), int(hex_value[4:6], 16)
+
+
+# 連続サーフェス用カラーランプ: 低=赤 → 中=橙 → 高=緑（スコアラベル配色に整合）。
+_SURFACE_STOPS = ((0.0, (220, 38, 38)), (0.5, (245, 158, 11)), (1.0, (21, 128, 61)))
+
+
+def _score_color_rgb(value: float) -> tuple[int, int, int]:
+    """0–1 の S を赤→橙→緑のグラデーション RGB に写す."""
+
+    value = max(0.0, min(1.0, value))
+    for (low, low_rgb), (high, high_rgb) in zip(_SURFACE_STOPS, _SURFACE_STOPS[1:]):
+        if value <= high:
+            span = high - low or 1.0
+            ratio = (value - low) / span
+            return tuple(  # type: ignore[return-value]
+                int(round(lc + (hc - lc) * ratio)) for lc, hc in zip(low_rgb, high_rgb)
+            )
+    return _SURFACE_STOPS[-1][1]
+
+
+def _encode_png_rgba(pixels: bytes, width: int, height: int) -> bytes:
+    """RGBA（8bit, color type 6）の生バイト列を PNG にエンコードする."""
+
+    stride = width * 4
+    raw = b"".join(b"\x00" + pixels[y * stride : (y + 1) * stride] for y in range(height))
+    png = b"\x89PNG\r\n\x1a\n" + _png_chunk(
+        b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    )
+    png += _png_chunk(b"IDAT", zlib.compress(raw, 9))
+    png += _png_chunk(b"IEND", b"")
+    return png
+
+
+def _surface_legend_html(place: str) -> str:
+    return f"""
+    <div style="
+      position: fixed; bottom: 24px; left: 24px; z-index: 9999;
+      background: white; padding: 10px 12px; border: 1px solid #d1d5db;
+      border-radius: 6px; font-size: 13px; box-shadow: 0 1px 4px #0002;">
+      <div style="font-weight: 700; margin-bottom: 6px;">近接性 S（補間サーフェス）: {place}</div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span>低</span>
+        <span style="display:inline-block; width:120px; height:10px;
+          background: linear-gradient(90deg, #dc2626, #f59e0b, #15803d);"></span>
+        <span>高</span>
+      </div>
+      <div style="margin-top:4px; color:#6b7280;">格子点を線形補間。データ範囲外は非表示。</div>
+    </div>
+    """

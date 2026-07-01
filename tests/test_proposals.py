@@ -19,6 +19,7 @@ def test_find_deficiencies_orders_missing_categories_by_weight():
         "b": {category: False for category in CATEGORY_WEIGHTS},
         "c": {category: True for category in CATEGORY_WEIGHTS},
     }
+    # "c" は S=0.60（>=0.5）の非・不足エリア。高重みの education 欠落だけが対象になる。
     reach_by_origin["c"]["education"] = False
     reach_by_origin["c"]["leisure"] = False
     reach_by_origin["c"]["work"] = False
@@ -30,7 +31,25 @@ def test_find_deficiencies_orders_missing_categories_by_weight():
         CATEGORY_WEIGHTS,
         key=lambda category: (-CATEGORY_WEIGHTS[category], category),
     )
-    assert deficiencies["c"] == ["education", "leisure", "work"]
+    assert deficiencies["c"] == ["education"]
+
+
+def test_find_deficiencies_filters_low_weight_gaps_outside_deficient_areas():
+    """§6.6-1: 非・不足エリア（S>=しきい値）は高重みカテゴリの欠落のみ提案対象."""
+
+    healthy = {category: True for category in CATEGORY_WEIGHTS}
+    low_weight_gap = dict(healthy, leisure=False, work=False)  # S=0.78
+    deficient = {category: False for category in CATEGORY_WEIGHTS}
+    deficient["transit"] = True  # S=0.13 < 0.5
+
+    deficiencies = find_deficiencies({"ok": low_weight_gap, "bad": deficient})
+
+    assert deficiencies["ok"] == []
+    assert "leisure" in deficiencies["bad"] and "work" in deficiencies["bad"]
+
+    # しきい値を全カテゴリが高重み扱いになる値へ下げると従来挙動に戻る（透明なパラメータ）
+    relaxed = find_deficiencies({"ok": low_weight_gap}, high_weight_threshold=0.0)
+    assert relaxed["ok"] == ["leisure", "work"]
 
 
 def test_time_conversion_proposals_counts_only_reachable_source_origins():

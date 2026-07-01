@@ -16,7 +16,7 @@ from typing import Any
 from uuid import uuid4
 
 from nmincity.backend.base import NetworkBackend
-from nmincity.config import CATEGORY_WEIGHTS
+from nmincity.config import CATEGORY_WEIGHTS, MODE_SPEED_KMH, WALK_SPEED_KMH
 
 
 def _arcpy() -> Any:
@@ -103,9 +103,9 @@ class ArcpyBackend(NetworkBackend):
             solver.defaultImpedanceCutoffs = [float(minutes)]
         except RuntimeError:
             # Travel Mode 未設定 → Shape_Length (m) で代替
-            # 徒歩 5 km/h = 83.33 m/min、自転車 15 km/h = 250 m/min
-            _SPEED_MPM = {"walk": 5_000 / 60, "bike": 15_000 / 60}
-            speed_mpm = _SPEED_MPM.get(mode, 5_000 / 60)
+            # 速度は要件 §6.4 / config.MODE_SPEED_KMH（徒歩 4.8 km/h・自転車 15 km/h）に従う
+            speed_kmh = MODE_SPEED_KMH.get(mode, WALK_SPEED_KMH)
+            speed_mpm = speed_kmh * 1000.0 / 60.0
             solver.impedanceAttributeName = "Shape_Length"
             solver.defaultImpedanceCutoffs = [float(minutes) * speed_mpm]
 

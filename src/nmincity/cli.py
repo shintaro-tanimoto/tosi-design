@@ -477,34 +477,45 @@ def dashboard(args: argparse.Namespace) -> int:
 
     title = f"{args.place} ({args.minutes:g}min, {args.mode})"
     points: list[tuple[float, float, float]] = []
+    eff_points: list[tuple[float, float, float]] = []
     scores: list[float] = []
+    eff_scores: list[float] = []
     reach_by_origin: dict[object, dict[str, bool]] = {}
     latlon_by_origin: dict[object, tuple[float, float]] = {}
     labels: Counter[str] = Counter()
     for origin in origins:
-        reach = backend.reachable_categories(origin, args.minutes, args.mode, weight="eff_travel_time")
+        # §5A/§6.7.1: 基準 S（無補正）と、質補正インピーダンスによる実効 S を並置する。
+        reach = backend.reachable_categories(origin, args.minutes, args.mode)
+        eff_reach = backend.reachable_categories(origin, args.minutes, args.mode, weight="eff_travel_time")
         score = proximity_score(reach)
+        eff_score = proximity_score(eff_reach)
         lon, lat = loader.node_lonlat(graph, origin)
         reach_by_origin[origin] = reach
         latlon_by_origin[origin] = (lat, lon)
         points.append((lat, lon, score))
+        eff_points.append((lat, lon, eff_score))
         scores.append(score)
+        eff_scores.append(eff_score)
         labels[score_label(score)] += 1
 
     base = f"outputs/{_safe_filename(args.place)}_dash_{args.minutes:g}min_{args.mode}"
     s_path = f"{base}_S.html"
+    eff_path = f"{base}_S_eff.html"
     q_path = f"{base}_Q.html"
     layers_path = f"{base}_layers.html"
     rates_path = f"{base}_reach_rates.html"
     save_map(score_map(points, title), s_path)
+    save_map(score_map(eff_points, f"{title} 実効"), eff_path)
     save_map(walkability_map(loader.edge_quality_lines(graph), title), q_path)
     save_map(category_layers_map(category_layer_points(reach_by_origin, latlon_by_origin), title), layers_path)
     reach_rate_chart(sensitivity.reach_rate(reach_by_origin), title, rates_path)
 
     average, minimum, maximum = _summary(scores)
+    eff_average, _eff_min, _eff_max = _summary(eff_scores)
     summary = [
         ("起点数", str(len(origins))),
         ("S 平均", f"{average:.3f}"),
+        ("実効 S 平均（質補正）", f"{eff_average:.3f}"),
         ("S 最小/最大", f"{minimum:.3f} / {maximum:.3f}"),
         ("良好/要改善/不足", f"{labels['良好']}/{labels['要改善']}/{labels['不足']}"),
     ]
@@ -518,7 +529,8 @@ def dashboard(args: argparse.Namespace) -> int:
         for category in CATEGORY_WEIGHTS
     ]
     panels = [
-        ("近接性 S（地図）", os.path.basename(s_path)),
+        ("近接性 S（基準）", os.path.basename(s_path)),
+        ("実効到達圏 S（質補正・軸2）", os.path.basename(eff_path)),
         ("環境の質 Q（歩行環境）", os.path.basename(q_path)),
         ("7要素レイヤー", os.path.basename(layers_path)),
         ("カテゴリ別到達率", os.path.basename(rates_path)),
@@ -537,6 +549,7 @@ def dashboard(args: argparse.Namespace) -> int:
     print(f"place: {args.place}")
     print(f"origins: {len(origins)}")
     print(f"S: avg={average:.3f}, min={minimum:.3f}, max={maximum:.3f}")
+    print(f"S(eff): avg={eff_average:.3f}")
     print(f"dashboard: {output_path}")
     return 0
 

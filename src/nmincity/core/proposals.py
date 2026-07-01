@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from nmincity.config import CATEGORY_NAMES, CATEGORY_WEIGHTS, TIME_CONVERSIONS
-from nmincity.core.score import proximity_score
+from nmincity.core.score import normalize, proximity_score
 
 
 @dataclass(frozen=True)
@@ -36,21 +36,28 @@ def find_deficiencies(
     weights: Mapping[str, float] | None = None,
     *,
     label_threshold: float = 0.5,
+    high_weight_threshold: float = 0.14,
 ) -> dict[Any, list[str]]:
     """起点ごとの不足カテゴリを重みの降順で返す.
 
-    低スコア起点は ``proximity_score(reach) < label_threshold`` で不足エリア
-    と判定できるが、この関数は高重みカテゴリ欠落も提案対象にできるよう、
-    各起点の未到達カテゴリ一覧を返す。全カテゴリに到達する起点は空リスト
-    になる。
+    要件定義書 §6.6-1「S(i) が低い、または高重みカテゴリで a(i,c)=0 の
+    メッシュを抽出する」に対応する。不足エリア
+    （``proximity_score(reach) < label_threshold``）の起点は全欠落カテゴリを、
+    それ以外の起点は高重みカテゴリ（正規化重み >= ``high_weight_threshold``、
+    初期重みでは教育・自然・物資調達・医療）の欠落だけを返す。全カテゴリに
+    到達する起点や、非不足エリアで高重み欠落が無い起点は空リストになる。
     """
 
     selected_weights = CATEGORY_WEIGHTS if weights is None else weights
-    categories = sorted(selected_weights, key=lambda category: (-selected_weights[category], category))
+    normalized = normalize(selected_weights)
+    categories = sorted(normalized, key=lambda category: (-normalized[category], category))
     result: dict[Any, list[str]] = {}
     for origin, reach in reach_by_origin.items():
-        _is_deficient_area = proximity_score(reach, selected_weights) < label_threshold
-        result[origin] = [category for category in categories if not bool(reach.get(category, False))]
+        is_deficient_area = proximity_score(reach, selected_weights) < label_threshold
+        missing = [category for category in categories if not bool(reach.get(category, False))]
+        if not is_deficient_area:
+            missing = [category for category in missing if normalized[category] >= high_weight_threshold]
+        result[origin] = missing
     return result
 
 

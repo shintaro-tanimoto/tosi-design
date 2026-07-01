@@ -619,6 +619,7 @@ def viz_gdb(args: argparse.Namespace) -> int:
     from nmincity.viz.charts import reach_rate_chart
     from nmincity.viz.dashboard import build_dashboard
     from nmincity.viz.maps import (
+        category_surfaces_map,
         facility_layers_map,
         save_map,
         score_mesh_map,
@@ -677,6 +678,16 @@ def viz_gdb(args: argparse.Namespace) -> int:
         panels.append(("カテゴリ別到達率", os.path.basename(rates_path)))
     else:
         print(f"注: {primary_layer} に reach_<category> 列が無いため到達率チャートは省略しました。")
+
+    category_reach = gdb_loader.load_category_reach_points(args.gdb, primary_layer)
+    if category_reach is not None:
+        catsurf_path = f"outputs/{safe_place}_gdb_{_safe_filename(primary_layer)}_catsurf.html"
+        save_map(category_surfaces_map(category_reach, args.place), catsurf_path)
+        panels.append(("7要素レイヤー別 到達面（重みづけ前）", os.path.basename(catsurf_path)))
+        print(f"category_surfaces_map: {catsurf_path}")
+    else:
+        print(f"注: {primary_layer} に reach_<category> 列が無いためカテゴリ別到達面は省略しました。")
+
     panels.append(("7要素 施設分布", os.path.basename(facilities_path)))
 
     weight_rows = [

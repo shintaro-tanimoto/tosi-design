@@ -64,6 +64,29 @@ def test_load_reach_profile_returns_none_without_reach_columns(tmp_path):
     assert gdb_loader.load_reach_profile(path, "score") is None
 
 
+def test_load_category_reach_points_per_origin(tmp_path):
+    path = _write_score_gpkg(tmp_path)
+    result = gdb_loader.load_category_reach_points(path, "score")
+
+    assert result is not None
+    assert set(result) == set(CATEGORY_NAMES)
+    # education: 起点1=到達 / 起点2=未到達（行順は保たれる）
+    education = result["education"]
+    assert len(education) == 2
+    assert [reached for _lat, _lon, reached in education] == [True, False]
+    for lat, lon, _reached in education:
+        assert 34.0 < lat < 35.5 and 135.0 < lon < 136.5
+    # nature は両方到達
+    assert [reached for _lat, _lon, reached in result["nature"]] == [True, True]
+    # 列の無いカテゴリは空リスト
+    assert result["goods"] == []
+
+
+def test_load_category_reach_points_returns_none_without_reach_columns(tmp_path):
+    path = _write_score_gpkg(tmp_path, with_reach=False)
+    assert gdb_loader.load_category_reach_points(path, "score") is None
+
+
 def test_load_score_summary_population_weighted(tmp_path):
     path = _write_score_gpkg(tmp_path)
     summary = gdb_loader.load_score_summary(path, "score")

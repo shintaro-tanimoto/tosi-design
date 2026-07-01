@@ -169,6 +169,38 @@ def load_reach_profile(
     return profile
 
 
+def load_category_reach_points(
+    gdb_path: str, layer: str
+) -> dict[str, list[tuple[float, float, bool]]] | None:
+    """起点ごとの ``reach_<category>`` を ``{category: [(lat, lon, reached)]}`` で返す.
+
+    ``reach_<category>`` 列が1つも無いレイヤーでは ``None``（呼び出し側で
+    カテゴリ別サーフェスを省略する）。列の無いカテゴリは空リスト、geometry や
+    到達値が NULL/NaN の行はスキップする。``viz.maps.category_surfaces_map`` が
+    そのまま受け取れる形。
+    """
+
+    fields = set(_layer_fields(gdb_path, layer))
+    reach_cols = {category: f"reach_{category}" for category in CATEGORY_NAMES}
+    if not any(col in fields for col in reach_cols.values()):
+        return None
+
+    gdf = gpd.read_file(gdb_path, layer=layer).to_crs(4326)
+    result: dict[str, list[tuple[float, float, bool]]] = {
+        category: [] for category in CATEGORY_NAMES
+    }
+    for category, col in reach_cols.items():
+        if col not in fields:
+            continue
+        for geom, reached in zip(gdf.geometry, gdf[col]):
+            if geom is None or geom.is_empty:
+                continue
+            if reached is None or reached != reached:  # None / NaN
+                continue
+            result[category].append((float(geom.y), float(geom.x), bool(float(reached))))
+    return result
+
+
 def load_score_summary(
     gdb_path: str, layer: str, weight_field: str = "POP"
 ) -> dict[str, object]:

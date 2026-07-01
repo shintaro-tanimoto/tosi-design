@@ -187,6 +187,54 @@ def facility_layers_map(
     return m
 
 
+def category_surfaces_map(
+    category_points: dict[str, list[tuple[float, float, bool]]],
+    place: str,
+    resolution: int = 240,
+) -> folium.Map:
+    """7要素（用途カテゴリ）別に到達評価 ``a(i,c)`` を補間した連続面を返す（重みづけ前）.
+
+    重みで合成する前の各起点評価（到達=1.0 / 未到達=0.0）を要素ごとに
+    ``scipy`` 線形補間し、赤(0)→橙→緑(1)のグラデーション面を ``ImageOverlay``
+    として ``FeatureGroup`` に重ねる。全要素で同一の補間範囲を使うので要素間で
+    比較できる。``LayerControl`` で要素を切替（先頭カテゴリのみ初期表示）。入力は
+    ``category_layer_points`` / ``gdb_loader.load_category_reach_points`` の出力。
+    """
+
+    all_points = [
+        (lat, lon, 0.0)
+        for points in category_points.values()
+        for lat, lon, _reachable in points
+    ]
+    if all_points:
+        bounds = _padded_bounds(all_points)
+        lat_min, lat_max, lon_min, lon_max = bounds
+        center = [(lat_min + lat_max) / 2, (lon_min + lon_max) / 2]
+    else:
+        bounds = None
+        center = [34.65, 135.51]
+
+    m = folium.Map(location=center, zoom_start=15, tiles="cartodbpositron")
+
+    first = True
+    for category, points in category_points.items():
+        name = CATEGORY_NAMES.get(category, category)
+        group = folium.FeatureGroup(name=name, show=first)
+        if bounds is not None and points:
+            value_points = [
+                (lat, lon, 1.0 if reachable else 0.0) for lat, lon, reachable in points
+            ]
+            overlay = _surface_image_overlay(value_points, bounds, resolution=resolution)
+            if overlay is not None:
+                overlay.add_to(group)
+        group.add_to(m)
+        first = False
+
+    folium.LayerControl(collapsed=False).add_to(m)
+    m.get_root().html.add_child(folium.Element(_category_surface_legend_html(place)))
+    return m
+
+
 def score_heatmap(
     points: list[tuple[float, float, float]],
     category_points: dict[str, list[tuple[float, float, bool]]] | None,
@@ -277,32 +325,74 @@ def score_surface_map(
     if not points:
         return folium.Map(location=[34.65, 135.51], zoom_start=15, tiles="cartodbpositron")
 
+    bounds = _padded_bounds(points)
+    lat_min, lat_max, lon_min, lon_max = bounds
+    m = folium.Map(
+        location=[(lat_min + lat_max) / 2, (lon_min + lon_max) / 2],
+        zoom_start=15,
+        tiles="cartodbpositron",
+    )
+    overlay = _surface_image_overlay(points, bounds, resolution=resolution)
+    if overlay is not None:
+        overlay.add_to(m)
+    m.get_root().html.add_child(folium.Element(_surface_legend_html(place)))
+    return m
+
+
+def _padded_bounds(
+    points: list[tuple[float, float, float]], pad: float = 0.02
+) -> tuple[float, float, float, float]:
+    """点群の緯度経度範囲を ``pad`` 割だけ広げた ``(lat_min, lat_max, lon_min, lon_max)``."""
+
+    lats = [lat for lat, _lon, *_ in points]
+    lons = [lon for _lat, lon, *_ in points]
+    lat_min, lat_max = min(lats), max(lats)
+    lon_min, lon_max = min(lons), max(lons)
+    pad_lat = (lat_max - lat_min) * pad or 1e-4
+    pad_lon = (lon_max - lon_min) * pad or 1e-4
+    return lat_min - pad_lat, lat_max + pad_lat, lon_min - pad_lon, lon_max + pad_lon
+
+
+def _surface_image_overlay(
+    points: list[tuple[float, float, float]],
+    bounds: tuple[float, float, float, float],
+    *,
+    resolution: int = 240,
+    opacity: float = 0.85,
+) -> "folium.raster_layers.ImageOverlay | None":
+    """``(lat, lon, value 0..1)`` を ``bounds`` 上で線形補間した ImageOverlay を返す.
+
+    ``scipy.interpolate.griddata`` で補間し、凸包外（NaN）は透過。点が無い、または
+    補間できない（同一直線上など）場合は ``None``。map には add せずに返すので、
+    呼び出し側で任意のレイヤーへ add できる。
+    """
+
+    if not points:
+        return None
+
     import numpy as np
     from scipy.interpolate import griddata
 
-    lats = np.array([lat for lat, _lon, _s in points], dtype=float)
-    lons = np.array([lon for _lat, lon, _s in points], dtype=float)
-    vals = np.array([max(0.0, min(1.0, s)) for _lat, _lon, s in points], dtype=float)
-
-    lat_min, lat_max = float(lats.min()), float(lats.max())
-    lon_min, lon_max = float(lons.min()), float(lons.max())
-    pad_lat = (lat_max - lat_min) * 0.02 or 1e-4
-    pad_lon = (lon_max - lon_min) * 0.02 or 1e-4
-    lat_min -= pad_lat; lat_max += pad_lat
-    lon_min -= pad_lon; lon_max += pad_lon
+    lat_min, lat_max, lon_min, lon_max = bounds
+    lats = np.array([lat for lat, _lon, _v in points], dtype=float)
+    lons = np.array([lon for _lat, lon, _v in points], dtype=float)
+    vals = np.array([max(0.0, min(1.0, v)) for _lat, _lon, v in points], dtype=float)
 
     grid_lon = np.linspace(lon_min, lon_max, resolution)
     grid_lat = np.linspace(lat_max, lat_min, resolution)  # 行0を北端にする
     mesh_lon, mesh_lat = np.meshgrid(grid_lon, grid_lat)
-    surface = griddata((lons, lats), vals, (mesh_lon, mesh_lat), method="linear")
+    try:
+        surface = griddata((lons, lats), vals, (mesh_lon, mesh_lat), method="linear")
+    except Exception:  # 点が少ない/同一直線上で三角形分割できない → 面を省略
+        return None
 
     pixels = bytearray(resolution * resolution * 4)
     for row in range(resolution):
         for col in range(resolution):
             value = surface[row, col]
-            idx = (row * resolution + col) * 4
             if value != value:  # NaN（データ範囲外）→ 透過
                 continue
+            idx = (row * resolution + col) * 4
             red, green, blue = _score_color_rgb(float(value))
             pixels[idx] = red
             pixels[idx + 1] = green
@@ -311,21 +401,13 @@ def score_surface_map(
     data_uri = "data:image/png;base64," + base64.b64encode(
         _encode_png_rgba(bytes(pixels), resolution, resolution)
     ).decode("ascii")
-
-    m = folium.Map(
-        location=[(lat_min + lat_max) / 2, (lon_min + lon_max) / 2],
-        zoom_start=15,
-        tiles="cartodbpositron",
-    )
-    folium.raster_layers.ImageOverlay(
+    return folium.raster_layers.ImageOverlay(
         image=data_uri,
         bounds=[[lat_min, lon_min], [lat_max, lon_max]],
-        opacity=0.85,
+        opacity=opacity,
         interactive=False,
         zindex=1,
-    ).add_to(m)
-    m.get_root().html.add_child(folium.Element(_surface_legend_html(place)))
-    return m
+    )
 
 
 def walkability_map(lines: list[tuple[list[tuple[float, float]], float]], place: str) -> folium.Map:
@@ -592,6 +674,24 @@ def _facility_legend_html(place: str) -> str:
       <div style="font-weight: 700; margin-bottom: 6px;">7要素 施設分布: {place}</div>
       {rows}
       <div style="margin-top:4px; color:#6b7280;">右上のレイヤー操作で要素を切替</div>
+    </div>
+    """
+
+
+def _category_surface_legend_html(place: str) -> str:
+    return f"""
+    <div style="
+      position: fixed; bottom: 24px; left: 24px; z-index: 9999;
+      background: white; padding: 10px 12px; border: 1px solid #d1d5db;
+      border-radius: 6px; font-size: 13px; box-shadow: 0 1px 4px #0002;">
+      <div style="font-weight: 700; margin-bottom: 6px;">7要素レイヤー別 到達面（重みづけ前）: {place}</div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span>未到達</span>
+        <span style="display:inline-block; width:120px; height:10px;
+          background: linear-gradient(90deg, #dc2626, #f59e0b, #15803d);"></span>
+        <span>到達</span>
+      </div>
+      <div style="margin-top:4px; color:#6b7280;">各要素ごとに到達評価を補間した面。右上のレイヤー操作で要素を切替。</div>
     </div>
     """
 

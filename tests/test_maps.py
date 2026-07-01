@@ -8,6 +8,7 @@ from nmincity.config import CATEGORY_NAMES
 from nmincity.viz.maps import (
     _score_color_rgb,
     category_layer_points,
+    category_surfaces_map,
     facility_layers_map,
     score_mesh_map,
     score_surface_map,
@@ -65,6 +66,38 @@ def test_facility_layers_map_returns_map_with_category_groups():
         1 for child in m._children.values() if isinstance(child, folium.FeatureGroup)
     )
     assert group_count == len(CATEGORY_NAMES)
+
+
+def test_category_surfaces_map_has_overlay_per_nonempty_category():
+    category_points = {category: [] for category in CATEGORY_NAMES}
+    # 非同一直線上の点で補間できる四隅（到達/未到達混在）
+    category_points["education"] = [
+        (34.64, 135.50, True),
+        (34.66, 135.50, False),
+        (34.64, 135.52, True),
+        (34.66, 135.52, False),
+    ]
+    # 全て同値（全未到達）でも例外を出さず面が乗ること
+    category_points["goods"] = [
+        (34.64, 135.50, False),
+        (34.66, 135.52, False),
+        (34.64, 135.52, False),
+    ]
+
+    m = category_surfaces_map(category_points, "天王寺区", resolution=16)
+
+    assert isinstance(m, folium.Map)
+    groups = [c for c in m._children.values() if isinstance(c, folium.FeatureGroup)]
+    # 7要素ぶんの FeatureGroup（空カテゴリも切替枠として残す）
+    assert len(groups) == len(CATEGORY_NAMES)
+    overlay_count = sum(
+        1
+        for group in groups
+        for child in group._children.values()
+        if isinstance(child, folium.raster_layers.ImageOverlay)
+    )
+    # 点を持つ education / goods にだけ補間面が乗る
+    assert overlay_count == 2
 
 
 def test_score_mesh_map_draws_polygon_per_cell():
